@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "outDir": "./dist/cli",
+    "jsx": "preserve"
+  },
+  "include": ["src/cli/**/*", "src/core/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
+
