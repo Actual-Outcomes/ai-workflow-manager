@@ -26,3 +26,21 @@
 - Dependencies: none flagged; repository still clean with no active processes.
 - Risks: lingering `.ai-working/` references may confuse new guidance if not updated today.
 - Notes: lessons learned emphasize keeping `.ai_working/` workspace tidy and running Prettier prior to commits.
+
+---
+
+## Session Start — 2025-11-14
+
+- Objective: resume documentation hygiene work, starting with `verify-shared-utilities.mdc` and other rule files flagged yesterday.
+- Dependencies: need clarity on pending `package.json` and `docs/` changes before rebasing onto `origin/main`.
+- Risks: local unstaged edits currently block `git rebase`; ensure we coordinate before touching shared files.
+- Notes: keep `.ai_working/` artifacts tidy and capture any new guardrails discovered during review.
+
+---
+
+## Session Start — 2025-11-14 (Commit Sweep)
+
+- Objective: follow startup checklist, capture context, then stage and commit all outstanding repo changes per commit guardrails.
+- Dependencies: confirm no additional instructions hidden in `.cursor/rules/` and ensure Prettier/lint requirements are satisfied before committing.
+- Risks: large documentation diff set increases chance of missed files; need thorough `git status` review prior to staging.
+- Notes: keep `.ai_working/project_todo.md` in sync with actual commits and document QA steps executed ahead of `git commit`.

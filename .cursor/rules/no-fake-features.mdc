@@ -1,0 +1,11 @@
+---
+description: Require that all surfaced features correspond to real, working implementations.
+---
+
+# No Fake Features
+
+1. Do not add placeholder, simulated, or non-functional features to the product UI, CLI, documentation, or tests. Every surfaced capability must be backed by working code.
+2. If a feature cannot be delivered end-to-end, keep it out of the UI/CLI/UX entirely until it is complete. Avoid marketing or demo-only stubs.
+3. When refactoring, remove any legacy simulated flows or demo data that could mislead users about actual functionality.
+4. Tests exposed through the Test Console must execute real suites (vitest, integration, CLI). If a suite does not exist yet, omit the entry until it is implemented.
+5. Before introducing a new entry point, confirm it is covered by automated tests or a documented manual verification plan.

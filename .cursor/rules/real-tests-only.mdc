@@ -1,0 +1,12 @@
+---
+description: Ensure tests reflect real implementations; no stubbed or demo-only suites.
+---
+
+# Real Tests Only
+
+1. Every test (unit, integration, CLI, UI) must exercise actual implementation code. Do not create fake, stubbed, or demo-only tests that mask missing functionality.
+2. If a feature is not implemented yet, do not add a passing placeholder test. Instead, write the test against the expected behavior and allow it to fail (marked as TODO) until the implementation exists.
+3. The Test Console must only list suites that execute real tests. Remove any entries that simulate results.
+4. Documentation should never reference tests or coverage that do not exist.
+5. When adding a new suite, include instructions for reproducing failures and ensure CI can run it headlessly.
+

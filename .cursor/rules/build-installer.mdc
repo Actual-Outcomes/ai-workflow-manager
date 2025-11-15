@@ -1,0 +1,24 @@
+---
+description: End-to-end procedure for producing and validating Electron installers with electron-builder.
+alwaysApply: true
+steps: |
+  1. Preconditions: ensure `npm install` has run, the working tree is clean, and the target branch is up to date. Confirm platform-specific dependencies for `better-sqlite3` are installed (see `QUICKSTART.md` troubleshooting).
+  2. Produce fresh artifacts: run `npm run build` to generate `dist/renderer`, `dist/main`, and `dist/preload`; follow with `npm run build:cli` so the packaged app includes the CLI bundle.
+  3. Package: invoke `npm run package` for a cross-platform build, or `npm run package:<platform>` (e.g., `package:win`) when targeting a specific OS. Never reuse an old `release/` output—remove or archive it first if unsure.
+  4. Verify output: inspect `release/` for the expected installer or archive. Record file names, sizes, and timestamps in `.ai_working/wrapup.md`. Check electron-builder logs for warnings that require action.
+  5. Smoke test: on the build machine, install/run the generated artifact to confirm the GUI launches, database initializes, and the CLI entry (`ai-workflow-manager` or platform-specific binary) executes `--help` successfully.
+  6. Handoff: document the installation steps, test results, and any remaining risks in `.ai_working/wrapup.md`. If distribution to another machine is needed, list the transfer method and required credentials.
+artifacts: |
+  - `release/` directory contents
+  - `dist/` build outputs
+  - `.ai_working/wrapup.md` entries for packaging runs
+recommendedCommands: |
+  - `npm run build`
+  - `npm run build:cli`
+  - `npm run package` / `npm run package:win` / `npm run package:mac`
+  - `Get-ChildItem release` (PowerShell) or `ls release` (bash) to review installer files
+postExecution: |
+  - Preserve the exact electron-builder log output alongside the installer when sharing with QA.
+  - If signing or notarization is pending, capture the follow-up tasks and owners explicitly.
+  - Delete stale `release/` artifacts once superseded to avoid confusion about which build is current.
+---

@@ -1,5 +1,4 @@
 import Database from 'better-sqlite3'
-import path from 'path'
 
 export interface Workflow {
   id: number
@@ -80,7 +79,10 @@ export class WorkflowDatabase {
     return this.getWorkflow(info.lastInsertRowid as number)!
   }
 
-  updateWorkflow(id: number, data: { name?: string; description?: string; status?: string }): Workflow {
+  updateWorkflow(
+    id: number,
+    data: { name?: string; description?: string; status?: string }
+  ): Workflow {
     const updates: string[] = []
     const values: any[] = []
 
@@ -118,4 +120,3 @@ export class WorkflowDatabase {
     this.db.close()
   }
 }
-
