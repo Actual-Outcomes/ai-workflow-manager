@@ -205,3 +205,72 @@
 - Tests should run successfully from Test Console UI
 - No rebuild warnings or errors in logs
 - Tests execute in Electron context, matching production runtime
+
+---
+
+## Session Wrap-Up — 2025-01-27 (Sprint 8 Completion)
+
+**Focus**
+
+- Completed Sprint 8: Scheduler Integration, Settings UI, and critical bug fixes. Implemented scheduled workflow execution with cron support, comprehensive settings management UI, and resolved workflow action configuration issues.
+
+**What changed**
+
+- **Scheduler Integration**:
+  - Updated `SchedulerRunner` to use `WorkflowExecutionService` instead of deprecated `WorkflowRuntime`
+  - Integrated `SchedulerRunner` with `WorkflowDraftService` to get drafts for scheduled workflows
+  - Scheduler now properly executes workflows using the modern execution engine
+
+- **Scheduler UI**:
+  - Added "+ Add Schedule" button with comprehensive modal form
+  - Implemented cron expression builder with presets:
+    - Daily (time picker)
+    - Weekly (day + time)
+    - Monthly (day of month + time)
+    - Hourly (minute)
+    - Custom (manual cron expression)
+  - Enhanced schedule table with:
+    - Workflow names (instead of IDs)
+    - Last run time display
+    - Pause/Resume buttons
+    - Delete button
+    - Status indicators
+
+- **Settings UI**:
+  - Added new "Settings" tab to main navigation
+  - **Connector Settings**: List and remove connectors with health status
+  - **Document Settings**: View document registry count (path config placeholder for future)
+  - **Notification Settings**: Configure quiet hours and notification channels
+  - **File Sandbox Settings**: Placeholder for future file operation security
+  - **General Settings**: Theme, language, telemetry toggle, log path display
+
+- **Bug Fixes**:
+  - Fixed workflow action configuration fields (LLM prompt, variable name, document name) to properly read from React Flow state instead of stale initial props
+  - Fixed workflow card button layout to prevent overflow using flex-wrap and proper spacing
+  - Added database migration for `workflow_version_id` column in `workflow_runs` table (fixes published workflow execution errors)
+
+- **Product Backlog**:
+  - Added File System Actions feature to product backlog (list files, move, delete, rename)
+
+**Verification**
+
+- All Sprint 8 tasks completed and tested
+- Scheduler UI allows creating schedules with various cron patterns
+- Settings UI provides comprehensive configuration management
+- Workflow action configuration fields now editable
+- Workflow cards display buttons properly without overflow
+- Database migration handles missing `workflow_version_id` column
+
+**Open items / Next session**
+
+- Test scheduled workflow execution end-to-end
+- Consider implementing File Sandbox Settings functionality
+- Consider implementing Document Settings path configuration
+- Plan Sprint 9 based on product backlog priorities (UICard Step, File System Actions)
+
+**Environment notes**
+
+- All changes committed: `e03795b` - "Complete Sprint 8: Scheduler Integration, Settings UI, and Bug Fixes"
+- Database migration will run automatically on next app startup
+- No pending git changes
+- Ready for demo of Sprint 8 features

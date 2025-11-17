@@ -106,6 +106,24 @@
 
 See `docs/sprint-7-plan.md` for detailed plan.
 
+## Sprint 8 - COMPLETED ✅
+
+**Status**: Complete  
+**Date**: 2025-01-27
+
+**Completed Tasks**:
+- ✅ Updated SchedulerRunner to use WorkflowExecutionService
+- ✅ Added scheduler UI with cron expression builder
+- ✅ Added Settings tab with comprehensive configuration panels
+- ✅ Fixed workflow action configuration field editing issues
+- ✅ Fixed workflow card button layout overflow
+- ✅ Added database migration for workflow_version_id column
+- ✅ Added File System Actions to product backlog
+
+**See**: `docs/sprint-8-plan.md` for full details
+
+---
+
 ## Product Backlog
 
 ### UICard Step Feature
