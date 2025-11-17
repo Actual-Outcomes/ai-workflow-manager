@@ -93,6 +93,26 @@ export class SchedulerService {
     this.updateStatus(id, 'active')
   }
 
+  update(id: number, cron: string, options: AddScheduleOptions = {}): ScheduleRecord {
+    const timezone = options.timezone ?? 'UTC'
+    validateCron(cron, { timezone })
+    
+    const stmt = this.db.prepare(`
+      UPDATE workflow_schedules
+      SET cron = ?, timezone = ?, profile = ?, next_run_at = ?
+      WHERE id = ?
+    `)
+    const nextRunAt = this.computeNextRun(cron, timezone)
+    stmt.run(cron, timezone, options.profile ?? null, nextRunAt, id)
+    const record = this.get(id)!
+    this.loggingService.log({
+      category: 'scheduler',
+      action: 'update',
+      metadata: { scheduleId: id, workflowId: record.workflowId, timezone }
+    })
+    return record
+  }
+
   delete(id: number) {
     const stmt = this.db.prepare(`DELETE FROM workflow_schedules WHERE id = ?`)
     stmt.run(id)

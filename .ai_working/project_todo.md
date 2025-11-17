@@ -119,8 +119,47 @@ See `docs/sprint-7-plan.md` for detailed plan.
 - ✅ Fixed workflow card button layout overflow
 - ✅ Added database migration for workflow_version_id column
 - ✅ Added File System Actions to product backlog
+- ✅ Improved scheduler UI (timezone selector, edit functionality, ordinal numbers)
+- ✅ Moved connector management to Settings screen
+- ✅ Made settings fields editable
 
 **See**: `docs/sprint-8-plan.md` for full details
+
+---
+
+## Sprint 9 - In Progress
+
+**Status**: In Progress  
+**Date**: 2025-01-27  
+**Duration**: ~11-15 days  
+**Focus**: UI/UX Enhancements & Component Library Integration
+
+**Planned Tasks**:
+
+### Phase 1: ShadCN UI Integration (Days 1-7)
+- [x] Setup and configuration (ShadCN, Tailwind CSS) ✅
+- [x] Replace core form components (Input, Select, Button, Label, Textarea) ✅
+- [x] Create component library (FormField, StatusBadge, EmptyState, LoadingState, Card, SectionHeader) ✅
+- [x] Document component library and identify composite components ✅
+- [x] Extract composite components (DiagnosticCard, ConnectorCard, DraftCard, WorkflowCard) ✅
+- [x] Migrate existing code to use new components ✅
+- [x] Replace ConfirmationModal with ShadCN AlertDialog ✅
+- [ ] Implement proper time picker component
+- [x] Update Settings screen with Card components (DiagnosticCard integrated) ✅
+
+### Phase 2: Workflow Designer Enhancements (Days 8-11)
+- [ ] Multi-selection implementation (Ctrl/Cmd+Click, drag selection)
+- [ ] Alignment toolbar (left, center, right, top, middle, bottom)
+- [ ] Right-click context menu for nodes and edges
+- [ ] Node resizing with corner grabbers
+
+### Phase 3: Polish and Testing (Days 12-15)
+- [ ] Visual consistency review
+- [ ] Accessibility audit
+- [ ] Integration testing
+- [ ] Bug fixes and refinements
+
+**See**: `docs/sprint-9-plan.md` for full details
 
 ---
 

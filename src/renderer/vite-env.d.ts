@@ -52,5 +52,28 @@ interface Window {
       path: string
       record: import('../core/documents/documentRegistry').DocumentRecord
     }>
+    getNotificationPreferences: () => Promise<import('../core/notifications/types').NotificationPreferences>
+    setNotificationPreferences: (prefs: import('../core/notifications/types').NotificationPreferences) => Promise<import('../core/notifications/types').NotificationPreferences>
+    addSchedule: (
+      workflowId: number,
+      cron: string,
+      options?: { timezone?: string; profile?: string }
+    ) => Promise<import('../core/scheduler/schedulerService').ScheduleRecord>
+    updateSchedule: (
+      id: number,
+      cron: string,
+      options?: { timezone?: string; profile?: string }
+    ) => Promise<{ success: boolean }>
+    listSchedules: () => Promise<import('../core/scheduler/schedulerService').ScheduleRecord[]>
+    pauseSchedule: (id: number) => Promise<{ success: boolean }>
+    resumeSchedule: (id: number) => Promise<{ success: boolean }>
+    deleteSchedule: (id: number) => Promise<{ success: boolean }>
+    listConnectors: () => Promise<import('../core/connectors/types').ConnectorSummary[]>
+    registerConnector: (
+      definition: import('../core/connectors/types').ManagedConnectorDefinition
+    ) => Promise<import('../core/connectors/types').ConnectorSummary>
+    removeConnector: (id: string) => Promise<{ success: boolean }>
+    testConnector: (id: string) => Promise<import('../core/connectors/types').HealthCheckResult>
+    listLLMModels: (connectorId: string) => Promise<any[]>
   }
 }

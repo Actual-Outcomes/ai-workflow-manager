@@ -11,11 +11,21 @@ import ReactFlow, {
   useEdgesState,
   NodeTypes,
   Handle,
-  Position
+  Position,
+  useReactFlow
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import { WorkflowNode, WorkflowTransition } from '../../core/domain/workflows'
-import { ConfirmationModal } from './ConfirmationModal'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog'
 
 interface WorkflowDesignerProps {
   draftId?: number
@@ -55,11 +65,13 @@ const nodeBaseStyle = {
   height: '100%'
 }
 
-const StartNode = ({ data }: { data: any }) => (
+const StartNode = ({ data, selected }: { data: any; selected?: boolean }) => (
   <div style={{
     ...nodeBaseStyle,
     background: '#1a1a1a',
-    borderColor: '#3b82f6',
+    borderColor: selected ? '#60a5fa' : '#3b82f6',
+    borderWidth: selected ? '2px' : '1px',
+    boxShadow: selected ? '0 0 0 2px rgba(59, 130, 246, 0.3), 0 2px 8px rgba(0, 0, 0, 0.3)' : '0 2px 8px rgba(0, 0, 0, 0.3)',
     color: '#3b82f6'
   }}>
     <Handle 
@@ -74,11 +86,13 @@ const StartNode = ({ data }: { data: any }) => (
   </div>
 )
 
-const ActionNode = ({ data }: { data: any }) => (
+const ActionNode = ({ data, selected }: { data: any; selected?: boolean }) => (
   <div style={{
     ...nodeBaseStyle,
     background: '#1a1a1a',
-    borderColor: '#8b5cf6',
+    borderColor: selected ? '#a78bfa' : '#8b5cf6',
+    borderWidth: selected ? '2px' : '1px',
+    boxShadow: selected ? '0 0 0 2px rgba(139, 92, 246, 0.3), 0 2px 8px rgba(0, 0, 0, 0.3)' : '0 2px 8px rgba(0, 0, 0, 0.3)',
     color: '#c4b5fd'
   }}>
     <Handle 
@@ -98,11 +112,13 @@ const ActionNode = ({ data }: { data: any }) => (
   </div>
 )
 
-const ConditionalNode = ({ data }: { data: any }) => (
+const ConditionalNode = ({ data, selected }: { data: any; selected?: boolean }) => (
   <div style={{
     ...nodeBaseStyle,
     background: '#1a1a1a',
-    borderColor: '#10b981',
+    borderColor: selected ? '#34d399' : '#10b981',
+    borderWidth: selected ? '2px' : '1px',
+    boxShadow: selected ? '0 0 0 2px rgba(16, 185, 129, 0.3), 0 2px 8px rgba(0, 0, 0, 0.3)' : '0 2px 8px rgba(0, 0, 0, 0.3)',
     color: '#6ee7b7',
     transform: 'rotate(45deg)',
     width: '100px',
@@ -127,11 +143,13 @@ const ConditionalNode = ({ data }: { data: any }) => (
   </div>
 )
 
-const EndNode = ({ data }: { data: any }) => (
+const EndNode = ({ data, selected }: { data: any; selected?: boolean }) => (
   <div style={{
     ...nodeBaseStyle,
     background: '#1a1a1a',
-    borderColor: '#ef4444',
+    borderColor: selected ? '#f87171' : '#ef4444',
+    borderWidth: selected ? '2px' : '1px',
+    boxShadow: selected ? '0 0 0 2px rgba(239, 68, 68, 0.3), 0 2px 8px rgba(0, 0, 0, 0.3)' : '0 2px 8px rgba(0, 0, 0, 0.3)',
     color: '#fca5a5',
     borderRadius: '50%',
     width: '90px',
@@ -193,7 +211,10 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
       source: transition.source,
       target: transition.target,
       type: 'smoothstep',
-      animated: false
+      animated: false,
+      pathOptions: {
+        offset: 0 // Reduce offset to make connectors shorter
+      }
     }))
   }, [initialTransitions]) // Depend on initialTransitions so it recomputes when they change
 
@@ -202,10 +223,27 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
   const [isSaving, setIsSaving] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [nodeToDelete, setNodeToDelete] = useState<string | null>(null)
+  const shouldDeleteRef = useRef(false)
+  const isDeletingRef = useRef(false)
   const nodePositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map())
+  const reactFlowInstance = useRef<any>(null)
 
   // Sync nodes/edges when props change - this is the source of truth
   useEffect(() => {
+    // Skip sync if we're in the middle of a deletion to prevent conflicts
+    // But only skip for a short time to avoid blocking forever
+    if (isDeletingRef.current) {
+      console.log('Skipping sync - deletion in progress')
+      // Set a timeout to allow sync after deletion completes
+      const timeoutId = setTimeout(() => {
+        if (isDeletingRef.current) {
+          console.warn('Deletion flag still set after timeout, clearing it')
+          isDeletingRef.current = false
+        }
+      }, 1000)
+      return () => clearTimeout(timeoutId)
+    }
+
     console.log('Props changed - syncing nodes/edges:', { 
       nodeCount: initialNodes.length, 
       transitionCount: initialTransitions.length
@@ -238,7 +276,10 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
         source: transition.source,
         target: transition.target,
         type: 'smoothstep',
-        animated: false
+        animated: false,
+        pathOptions: {
+          offset: 0 // Reduce offset to make connectors shorter
+        }
       }))
       console.log('Setting edges:', newEdges)
       setEdges(newEdges)
@@ -276,7 +317,10 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
         id: `edge-${params.source}-${params.target}`,
         source: params.source,
         target: params.target,
-        type: 'smoothstep'
+        type: 'smoothstep',
+        pathOptions: {
+          radius: 0 // Remove corner radius to make connectors more direct and shorter
+        }
       }
       
       setEdges((eds) => addEdge(newEdge, eds))
@@ -365,6 +409,10 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
   }, [])
 
   const deleteNode = useCallback((nodeId: string) => {
+    console.log('Deleting node:', nodeId)
+    // Set deletion flag to prevent sync conflicts (only for a short time)
+    isDeletingRef.current = true
+    
     // Remove the node
     const updatedNodes = flowNodes.filter(n => n.id !== nodeId)
     setNodes(updatedNodes)
@@ -373,10 +421,15 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
     setEdges(updatedEdges)
     // Deselect
     onNodeSelect?.(null)
-    // Close modal
-    setShowDeleteConfirm(false)
-    setNodeToDelete(null)
-    // Auto-save
+    
+    // Clear deletion flag after a short delay to allow UI to update
+    // This flag only prevents sync, not other operations
+    setTimeout(() => {
+      isDeletingRef.current = false
+      console.log('Deletion flag cleared')
+    }, 300)
+    
+    // Auto-save (non-blocking to prevent UI freeze)
     if (onSave) {
       const workflowNodes = updatedNodes.map(n => {
         let nodeType = 'action'
@@ -402,7 +455,11 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
         source: e.source,
         target: e.target
       }))
-      onSave(workflowNodes, workflowTransitions)
+      // Fire and forget - don't await to prevent blocking
+      Promise.resolve(onSave(workflowNodes, workflowTransitions))
+        .catch((error) => {
+          console.error('Failed to save after node deletion:', error)
+        })
     }
   }, [flowNodes, flowEdges, onSave, onNodeSelect, setNodes, setEdges])
 
@@ -432,10 +489,26 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
       'conditional': 'If',
       'action': 'Action'
     }
+    
+    // Calculate center of visible viewport
+    let position = { x: 400, y: 300 } // Default center
+    if (reactFlowInstance.current) {
+      const viewport = reactFlowInstance.current.getViewport()
+      const bounds = reactFlowInstance.current.getViewport()
+      // Get the center of the current viewport
+      // viewport.x and viewport.y are the pan offsets, viewport.zoom is the zoom level
+      // We need to calculate the center in flow coordinates
+      const flowWidth = 1000 // Approximate flow width
+      const flowHeight = 800 // Approximate flow height
+      const centerX = -viewport.x / viewport.zoom + flowWidth / 2
+      const centerY = -viewport.y / viewport.zoom + flowHeight / 2
+      position = { x: centerX, y: centerY }
+    }
+    
     const newNode: Node = {
       id: newNodeId,
       type: type,
-      position: { x: Math.random() * 400 + 100, y: Math.random() * 400 + 100 },
+      position: position,
       data: { 
         label: labelMap[type] || 'Action',
         type: type, // Store type in data as well for persistence
@@ -475,6 +548,52 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
       onSave(workflowNodes, workflowTransitions)
     }
   }, [flowNodes, flowEdges, onSave, setNodes])
+  
+  const onInit = useCallback((instance: any) => {
+    reactFlowInstance.current = instance
+  }, [])
+  
+  const onEdgeClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
+    // Select edge for potential deletion
+    // In React Flow, edges can be deleted by selecting and pressing Delete
+    // We'll handle this in the keyboard handler
+  }, [])
+  
+  const onEdgeDoubleClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
+    // Delete edge on double-click
+    if (confirm(`Delete connection from ${edge.source} to ${edge.target}?`)) {
+      setEdges((eds) => eds.filter((e) => e.id !== edge.id))
+      // Auto-save
+      if (onSave) {
+        const workflowNodes = flowNodes.map(n => {
+          let nodeType = 'action'
+          if (n.type === 'start') nodeType = 'start'
+          else if (n.type === 'end') nodeType = 'end'
+          else if (n.type === 'conditional') nodeType = 'conditional'
+          else if (n.data?.type) nodeType = n.data.type
+          
+          return {
+            id: n.id,
+            type: nodeType,
+            label: n.data?.label || '',
+            entryActions: n.data?.entryActions || [],
+            exitActions: n.data?.exitActions || [],
+            metadata: {
+              ...(n.data?.metadata || {}),
+              position: n.position
+            }
+          }
+        })
+        const updatedEdges = flowEdges.filter((e) => e.id !== edge.id)
+        const workflowTransitions = updatedEdges.map(e => ({
+          id: e.id,
+          source: e.source,
+          target: e.target
+        }))
+        onSave(workflowNodes, workflowTransitions)
+      }
+    }
+  }, [flowNodes, flowEdges, onSave, setEdges])
 
   const selectedNode = selectedNodeId ? flowNodes.find(n => n.id === selectedNodeId) : null
   const selectedWorkflowNode = selectedNodeId ? initialNodes.find(n => n.id === selectedNodeId) : null
@@ -575,9 +694,21 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodeClick={onNodeClick}
+            onEdgeClick={onEdgeClick}
+            onEdgeDoubleClick={onEdgeDoubleClick}
             onPaneClick={() => onNodeSelect?.(null)}
+            onInit={onInit}
             nodeTypes={nodeTypes}
             fitView
+            edgesUpdatable={true}
+            edgesFocusable={true}
+            edgesDeletable={true}
+            deleteKeyCode={['Delete', 'Backspace']}
+            nodesDraggable={true}
+            nodesConnectable={true}
+            selectNodesOnDrag={false}
+            multiSelectionKeyCode={['Meta', 'Control']}
+            selectionOnDrag={true}
           >
             <Background />
             <Controls />
@@ -1242,19 +1373,51 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
       </div>
 
       {/* Confirmation Modal */}
-      <ConfirmationModal
-        isOpen={showDeleteConfirm}
-        title="Delete Node"
-        message={`Are you sure you want to delete "${selectedNode && selectedWorkflowNode ? (selectedWorkflowNode.label || selectedNode.id) : ''}"? This will also remove all connections to this node.`}
-        onConfirm={() => nodeToDelete && deleteNode(nodeToDelete)}
-        onCancel={() => {
-          setShowDeleteConfirm(false)
-          setNodeToDelete(null)
+      <AlertDialog 
+        open={showDeleteConfirm} 
+        onOpenChange={(open) => {
+          if (!open) {
+            // Dialog is closing
+            const nodeIdToDelete = nodeToDelete
+            const shouldDelete = shouldDeleteRef.current
+            setShowDeleteConfirm(false)
+            setNodeToDelete(null)
+            shouldDeleteRef.current = false
+            
+            // Wait for dialog animation to complete
+            setTimeout(() => {
+              if (shouldDelete && nodeIdToDelete) {
+                // User clicked Delete - perform deletion
+                deleteNode(nodeIdToDelete)
+              } else {
+                // User clicked Cancel - ensure deletion flag is cleared
+                isDeletingRef.current = false
+              }
+            }, 200)
+          }
         }}
-        confirmText="Delete"
-        cancelText="Cancel"
-        confirmColor="#ef4444"
-      />
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Node</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{selectedNode && selectedWorkflowNode ? (selectedWorkflowNode.label || selectedNode.id) : ''}"? This will also remove all connections to this node.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                // Mark that user wants to delete
+                shouldDeleteRef.current = true
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

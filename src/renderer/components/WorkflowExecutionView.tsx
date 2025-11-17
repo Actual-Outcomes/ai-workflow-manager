@@ -126,7 +126,7 @@ export const WorkflowExecutionView: React.FC<WorkflowExecutionViewProps> = ({
       await window.electronAPI.pauseWorkflowRun(runId)
     } catch (error) {
       console.error('Failed to pause workflow:', error)
-      alert('Failed to pause workflow')
+      // Note: Toast notifications should be handled by parent component
     }
   }
 
@@ -135,7 +135,7 @@ export const WorkflowExecutionView: React.FC<WorkflowExecutionViewProps> = ({
       await window.electronAPI.resumeWorkflowRun(runId, draftId)
     } catch (error) {
       console.error('Failed to resume workflow:', error)
-      alert('Failed to resume workflow')
+      // Note: Toast notifications should be handled by parent component
     }
   }
 

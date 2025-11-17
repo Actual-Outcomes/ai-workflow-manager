@@ -117,6 +117,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     cron: string,
     options?: { timezone?: string; profile?: string }
   ) => ipcRenderer.invoke('scheduler:add', workflowId, cron, options),
+  updateSchedule: (
+    id: number,
+    cron: string,
+    options?: { timezone?: string; profile?: string }
+  ) => ipcRenderer.invoke('scheduler:update', id, cron, options),
   listSchedules: () => ipcRenderer.invoke('scheduler:list'),
   pauseSchedule: (id: number) => ipcRenderer.invoke('scheduler:pause', id),
   resumeSchedule: (id: number) => ipcRenderer.invoke('scheduler:resume', id),
@@ -190,6 +195,11 @@ export type ElectronAPI = {
     cron: string,
     options?: { timezone?: string; profile?: string }
   ) => Promise<ScheduleRecord>
+  updateSchedule: (
+    id: number,
+    cron: string,
+    options?: { timezone?: string; profile?: string }
+  ) => Promise<{ success: boolean }>
   listSchedules: () => Promise<ScheduleRecord[]>
   pauseSchedule: (id: number) => Promise<{ success: boolean }>
   resumeSchedule: (id: number) => Promise<{ success: boolean }>

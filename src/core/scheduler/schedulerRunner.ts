@@ -81,8 +81,8 @@ export class SchedulerRunner {
           draft = this.workflowDraftService.createDraft(workflow.name, workflow.description ?? '')
           this.workflowDraftService.updateDraft(draft.id, {
             content: {
-              nodes: content.nodes,
-              transitions: content.transitions
+              nodes: content.nodes as any,
+              transitions: content.transitions as any
             }
           })
         } catch (error) {
@@ -133,7 +133,7 @@ export class SchedulerRunner {
     await this.retentionService?.enforce()
   }
 
-  private parseDefinition(payload: string): { nodes: unknown[]; transitions: unknown[] } {
+  private parseDefinition(payload: string): { nodes: any[]; transitions: any[] } {
     try {
       const parsed = JSON.parse(payload ?? '{}')
       return {

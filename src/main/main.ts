@@ -462,6 +462,11 @@ ipcMain.handle('scheduler:resume', (_, id: number) => {
   return { success: true }
 })
 
+ipcMain.handle('scheduler:update', (_, id: number, cron: string, options) => {
+  schedulerService.update(id, cron, options ?? {})
+  return { success: true }
+})
+
 ipcMain.handle('scheduler:delete', (_, id: number) => {
   schedulerService.delete(id)
   return { success: true }

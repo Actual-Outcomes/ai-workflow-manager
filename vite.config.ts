@@ -5,6 +5,9 @@ import path from 'path'
 export default defineConfig({
   plugins: [react()],
   base: './',
+  css: {
+    postcss: './postcss.config.js',
+  },
   resolve: {
     alias: {
       '@renderer': path.resolve(__dirname, './src/renderer'),

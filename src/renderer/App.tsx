@@ -55,8 +55,21 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import './App.css'
 import { ListedTestSuite, TestRunBundle, TestRunResult } from '../shared/testRunnerTypes'
 import { WorkflowDesigner } from './components/WorkflowDesigner'
-import { ConfirmationModal } from './components/ConfirmationModal'
 import { WorkflowExecutionView } from './components/WorkflowExecutionView'
+import { Button } from './components/ui/button'
+import { Input } from './components/ui/input'
+import { Label } from './components/ui/label'
+import { Textarea } from './components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
+import { EmptyState } from './components/ui/empty-state'
+import { LoadingState } from './components/ui/loading-state'
+import { StatusBadge } from './components/ui/status-badge'
+import { DraftCard } from './components/composite/draft-card'
+import { WorkflowCard } from './components/composite/workflow-card'
+import { ConnectorCard } from './components/composite/connector-card'
+import { DiagnosticCard } from './components/composite/diagnostic-card'
+import { Toaster } from './components/ui/toaster'
+import { useToast } from './components/ui/use-toast'
 
 interface Workflow {
   id: number
@@ -70,6 +83,7 @@ interface Workflow {
 type TabId = 'workflows' | 'tests' | 'diagnostics' | 'settings'
 
 function App() {
+  const { toast } = useToast()
   const [workflows, setWorkflows] = useState<Workflow[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -318,7 +332,11 @@ function App() {
       const draft = draftsList.find((d) => d.name === workflow?.name)
       
       if (!draft) {
-        alert('No draft found for this workflow. Please create and publish a draft first.')
+        toast({
+          variant: 'warning',
+          title: 'No Draft Found',
+          description: 'Please create and publish a draft first.',
+        })
         return
       }
 
@@ -335,10 +353,18 @@ function App() {
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
       
-      alert('Workflow exported successfully!')
+      toast({
+        variant: 'success',
+        title: 'Export Successful',
+        description: 'Workflow exported successfully!',
+      })
     } catch (error) {
       console.error('Failed to export workflow:', error)
-      alert(error instanceof Error ? error.message : 'Failed to export workflow')
+      toast({
+        variant: 'destructive',
+        title: 'Export Failed',
+        description: error instanceof Error ? error.message : 'Failed to export workflow',
+      })
     }
   }
 
@@ -359,7 +385,11 @@ function App() {
           const result = await window.electronAPI.importWorkflow(manifest)
           
           if (!result.success) {
-            alert(`Import failed:\n${result.errors.join('\n')}\n\nWarnings:\n${result.warnings.join('\n')}`)
+            toast({
+              variant: 'destructive',
+              title: 'Import Failed',
+              description: `Errors: ${result.errors.join(', ')}. Warnings: ${result.warnings.join(', ')}`,
+            })
             return
           }
 
@@ -379,17 +409,29 @@ function App() {
               transitions: result.draft.transitions
             })
             await loadDrafts()
-            alert('Workflow imported successfully! Check the Drafts section.')
+            toast({
+              variant: 'success',
+              title: 'Import Successful',
+              description: 'Workflow imported successfully! Check the Drafts section.',
+            })
           }
         } catch (error) {
           console.error('Failed to import workflow:', error)
-          alert(error instanceof Error ? error.message : 'Failed to import workflow')
+          toast({
+            variant: 'destructive',
+            title: 'Import Failed',
+            description: error instanceof Error ? error.message : 'Failed to import workflow',
+          })
         }
       }
       input.click()
     } catch (error) {
       console.error('Failed to import workflow:', error)
-      alert(error instanceof Error ? error.message : 'Failed to import workflow')
+      toast({
+        variant: 'destructive',
+        title: 'Import Failed',
+        description: error instanceof Error ? error.message : 'Failed to import workflow',
+      })
     }
   }
 
@@ -400,7 +442,11 @@ function App() {
       const draftsList = await window.electronAPI.listWorkflowDrafts()
       const draft = draftsList.find((d) => d.name === workflows.find((w) => w.id === workflowId)?.name)
       if (!draft) {
-        alert('No draft found for this workflow. Please create and publish a draft first.')
+        toast({
+          variant: 'warning',
+          title: 'No Draft Found',
+          description: 'Please create and publish a draft first.',
+        })
         return
       }
       const result = await window.electronAPI.executeWorkflow(draft.id, workflowId)
@@ -409,7 +455,11 @@ function App() {
       setViewingExecution({ runId: result.runId, workflowId, draftId: draft.id })
     } catch (error) {
       console.error('Failed to execute workflow:', error)
-      alert(error instanceof Error ? error.message : 'Failed to execute workflow')
+      toast({
+        variant: 'destructive',
+        title: 'Execution Failed',
+        description: error instanceof Error ? error.message : 'Failed to execute workflow',
+      })
     } finally {
       setExecutingWorkflowId(null)
     }
@@ -673,7 +723,11 @@ function App() {
       await loadConnectors()
     } catch (error) {
       console.error('Failed to remove connector:', error)
-      alert('Failed to remove connector.')
+      toast({
+        variant: 'destructive',
+        title: 'Failed',
+        description: 'Failed to remove connector.',
+      })
     }
   }
 
@@ -698,10 +752,18 @@ function App() {
     if (!logPath) return
     try {
       await navigator.clipboard.writeText(logPath)
-      alert('Log path copied to clipboard.')
+      toast({
+        variant: 'success',
+        title: 'Copied',
+        description: 'Log path copied to clipboard.',
+      })
     } catch (error) {
       console.error('Failed to copy log path:', error)
-      alert('Failed to copy log path.')
+      toast({
+        variant: 'destructive',
+        title: 'Failed',
+        description: 'Failed to copy log path.',
+      })
     }
   }
 
@@ -712,7 +774,11 @@ function App() {
       setTelemetryEnabledState(updated)
     } catch (error) {
       console.error('Failed to update telemetry setting:', error)
-      alert('Failed to update telemetry setting.')
+      toast({
+        variant: 'destructive',
+        title: 'Failed',
+        description: 'Failed to update telemetry setting.',
+      })
     } finally {
       setTelemetryUpdating(false)
     }
@@ -750,7 +816,11 @@ function App() {
       })
     } catch (error) {
       console.error('Failed to update notification preferences:', error)
-      alert('Failed to save notification preferences.')
+      toast({
+        variant: 'destructive',
+        title: 'Failed',
+        description: 'Failed to save notification preferences.',
+      })
     } finally {
       setNotificationSaving(false)
     }
@@ -761,17 +831,27 @@ function App() {
       setDraftActionId(id)
       const result = await window.electronAPI.validateWorkflowDraft(id)
       if (result.valid) {
-        alert(
-          result.warnings.length
-            ? `Valid with warnings:\n${result.warnings.join('\n')}`
-            : 'Draft valid'
-        )
+        toast({
+          variant: result.warnings.length ? 'warning' : 'success',
+          title: result.warnings.length ? 'Valid with Warnings' : 'Draft Valid',
+          description: result.warnings.length
+            ? `Warnings: ${result.warnings.join(', ')}`
+            : 'Draft is valid',
+        })
       } else {
-        alert(`Draft invalid:\n${result.errors.join('\n')}`)
+        toast({
+          variant: 'destructive',
+          title: 'Draft Invalid',
+          description: `Errors: ${result.errors.join(', ')}`,
+        })
       }
     } catch (error) {
       console.error('Failed to validate draft:', error)
-      alert('Failed to validate draft.')
+      toast({
+        variant: 'destructive',
+        title: 'Validation Failed',
+        description: 'Failed to validate draft.',
+      })
     } finally {
       setDraftActionId(null)
     }
@@ -781,12 +861,20 @@ function App() {
     try {
       setDraftActionId(id)
       const result = await window.electronAPI.publishWorkflowDraft(id)
-      alert(`Published workflow #${result.workflow.id}`)
+      toast({
+        variant: 'success',
+        title: 'Published',
+        description: `Published workflow #${result.workflow.id}`,
+      })
       await loadWorkflows()
       await loadDrafts()
     } catch (error) {
       console.error('Failed to publish draft:', error)
-      alert('Publish failed. Check validation errors in CLI/logs.')
+      toast({
+        variant: 'destructive',
+        title: 'Publish Failed',
+        description: 'Publish failed. Check validation errors in CLI/logs.',
+      })
     } finally {
       setDraftActionId(null)
     }
@@ -802,7 +890,11 @@ function App() {
       await loadDrafts()
     } catch (error) {
       console.error('Failed to delete draft:', error)
-      alert('Failed to delete draft.')
+      toast({
+        variant: 'destructive',
+        title: 'Failed',
+        description: 'Failed to delete draft.',
+      })
     } finally {
       setDraftActionId(null)
     }
@@ -818,14 +910,25 @@ function App() {
         transitions: transitions as any
       })
       // Update current draft without reloading all drafts (faster)
-      const updated = await window.electronAPI.getWorkflowDraft(designingDraftId)
-      if (updated) {
-        console.log('Draft updated:', updated)
-        setCurrentDraft(updated as any)
-      }
+      // Use setTimeout to defer state update and prevent blocking during deletion
+      setTimeout(async () => {
+        try {
+          const updated = await window.electronAPI.getWorkflowDraft(designingDraftId)
+          if (updated) {
+            console.log('Draft updated:', updated)
+            setCurrentDraft(updated as any)
+          }
+        } catch (error) {
+          console.error('Failed to refresh draft after save:', error)
+        }
+      }, 100)
     } catch (error) {
       console.error('Failed to save workflow:', error)
-      alert('Failed to save workflow changes.')
+      toast({
+        variant: 'destructive',
+        title: 'Failed',
+        description: 'Failed to save workflow changes.',
+      })
     }
   }
 
@@ -848,7 +951,11 @@ function App() {
   const handleExportDocument = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!documentForm.name.trim() || !documentForm.content.trim()) {
-      alert('Provide a document name and content before exporting.')
+      toast({
+        variant: 'warning',
+        title: 'Missing Information',
+        description: 'Provide a document name and content before exporting.',
+      })
       return
     }
     try {
@@ -858,12 +965,20 @@ function App() {
         format: documentForm.format,
         content: documentForm.content
       })
-      alert(`✅ Document saved to ${result.path}`)
+      toast({
+        variant: 'success',
+        title: 'Document Saved',
+        description: `Document saved to ${result.path}`,
+      })
       setDocumentForm({ name: '', format: documentForm.format, content: '' })
       await loadDocuments()
     } catch (error) {
       console.error('Failed to export document:', error)
-      alert('Document export failed. Check logs for details.')
+      toast({
+        variant: 'destructive',
+        title: 'Export Failed',
+        description: 'Document export failed. Check logs for details.',
+      })
     } finally {
       setIsExportingDocument(false)
     }
@@ -967,10 +1082,18 @@ function App() {
       if (response.canceled || !response.path) {
         return
       }
-      alert(`✅ Test result saved to ${response.path}`)
+      toast({
+        variant: 'success',
+        title: 'Test Result Saved',
+        description: `Test result saved to ${response.path}`,
+      })
     } catch (error) {
       console.error('Failed to export test result:', error)
-      alert('Failed to export test result. Check logs for details.')
+      toast({
+        variant: 'destructive',
+        title: 'Export Failed',
+        description: 'Failed to export test result. Check logs for details.',
+      })
     }
   }
 
@@ -994,17 +1117,29 @@ function App() {
         .join('\n')
 
       await navigator.clipboard.writeText(resultText)
-      alert('✅ Test result copied to clipboard!')
+      toast({
+        variant: 'success',
+        title: 'Copied',
+        description: 'Test result copied to clipboard!',
+      })
     } catch (error) {
       console.error('Failed to copy test result:', error)
-      alert('Failed to copy test result. Check logs for details.')
+      toast({
+        variant: 'destructive',
+        title: 'Failed',
+        description: 'Failed to copy test result. Check logs for details.',
+      })
     }
   }
 
   const handleExportAllResults = async () => {
     const bundle = buildTestRunBundle()
     if (!bundle) {
-      alert('Run at least one suite before exporting combined results.')
+      toast({
+        variant: 'warning',
+        title: 'No Results',
+        description: 'Run at least one suite before exporting combined results.',
+      })
       return
     }
     try {
@@ -1013,10 +1148,18 @@ function App() {
       if (response.canceled || !response.path) {
         return
       }
-      alert(`✅ All test results saved to ${response.path}`)
+      toast({
+        variant: 'success',
+        title: 'Results Saved',
+        description: `All test results saved to ${response.path}`,
+      })
     } catch (error) {
       console.error('Failed to export all test results:', error)
-      alert('Failed to export all test results. Check logs for details.')
+      toast({
+        variant: 'destructive',
+        title: 'Export Failed',
+        description: 'Failed to export all test results. Check logs for details.',
+      })
     } finally {
       setIsExportingAll(false)
     }
@@ -1025,22 +1168,27 @@ function App() {
   return (
     <div className="app">
       <header className="header">
-        <div className="header-content">
-          <h1>🤖 AI Workflow Manager</h1>
-          <span className="version">v{appVersion}</span>
+        <div className="header-content" style={{ position: 'relative', width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h1>🤖 AI Workflow Manager</h1>
+            <span className="version">v{appVersion}</span>
+          </div>
+          <div style={{ position: 'absolute', right: '1rem', top: '50%', transform: 'translateY(-50%)', zIndex: 1000 }}>
+            <Toaster />
+          </div>
         </div>
       </header>
 
       <main className="main">
             <div className="toolbar">
               <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button
-                  className="btn-secondary"
+                <Button
+                  variant="secondary"
                   onClick={handleImportWorkflow}
                   title="Import workflow from JSON file"
                 >
                   Import Workflow
-                </button>
+                </Button>
               </div>
               <div className="tab-switcher">
             <button
@@ -1086,13 +1234,12 @@ function App() {
             </button>
           </div>
           {activeTab === 'workflows' && (
-            <button
-              className="btn-primary"
+            <Button
               type="button"
               onClick={() => setShowCreateForm(!showCreateForm)}
             >
               {showCreateForm ? '✕ Cancel' : '+ New Workflow'}
-            </button>
+            </Button>
           )}
         </div>
 
@@ -1105,81 +1252,47 @@ function App() {
                   <p>Validate and publish drafts before activating workflows.</p>
                 </div>
                 <div style={{ display: 'flex', gap: '10px' }}>
-                  <button
-                    className="btn-primary"
+                  <Button
                     type="button"
                     onClick={() => setShowCreateDraftForm(true)}
                   >
                     + Create Draft
-                  </button>
-                  <button
-                    className="btn-secondary"
+                  </Button>
+                  <Button
+                    variant="secondary"
                     type="button"
                     onClick={loadDrafts}
                     disabled={draftsLoading}
                   >
                     {draftsLoading ? 'Refreshing…' : 'Refresh'}
-                  </button>
+                  </Button>
                 </div>
               </div>
               {draftsLoading ? (
-                <div className="loading small">Loading drafts…</div>
+                <LoadingState small message="Loading drafts…" />
               ) : drafts.length === 0 ? (
-                <div className="empty-state compact">
+                <EmptyState compact>
                   <p>No drafts yet. Click "+ Create Draft" above to create your first workflow draft.</p>
-                </div>
+                </EmptyState>
               ) : (
                 <div className="draft-grid">
                   {drafts.map((draft) => (
-                    <div key={draft.id} className="draft-card">
-                      <div className="draft-card-header">
-                        <div>
-                          <h4>{draft.name}</h4>
-                          <small>
-                            v{draft.version} · {draft.status}
-                          </small>
-                        </div>
-                        <span className="draft-updated">
-                          Updated {new Date(draft.updatedAt).toLocaleString()}
-                        </span>
-                      </div>
-                      <div className="draft-actions">
-                        <button
-                          className="btn-primary"
-                          type="button"
-                          onClick={() => {
-                            setDesigningDraftId(draft.id)
-                            setCurrentDraft(draft)
-                          }}
-                        >
-                          Open Designer
-                        </button>
-                        <button
-                          className="btn-secondary"
-                          type="button"
-                          onClick={() => handleValidateDraft(draft.id)}
-                          disabled={draftActionId === draft.id}
-                        >
-                          {draftActionId === draft.id ? 'Working…' : 'Validate'}
-                        </button>
-                        <button
-                          className="btn-secondary"
-                          type="button"
-                          onClick={() => handlePublishDraft(draft.id)}
-                          disabled={draftActionId === draft.id}
-                        >
-                          Publish
-                        </button>
-                        <button
-                          className="btn-danger"
-                          type="button"
-                          onClick={() => handleDeleteDraft(draft.id)}
-                          disabled={draftActionId === draft.id}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
+                    <DraftCard
+                      key={draft.id}
+                      id={draft.id}
+                      name={draft.name}
+                      version={draft.version}
+                      status={draft.status}
+                      updatedAt={draft.updatedAt}
+                      onOpenDesigner={() => {
+                        setDesigningDraftId(draft.id)
+                        setCurrentDraft(draft)
+                      }}
+                      onValidate={() => handleValidateDraft(draft.id)}
+                      onPublish={() => handlePublishDraft(draft.id)}
+                      onDelete={() => handleDeleteDraft(draft.id)}
+                      disabled={draftActionId === draft.id}
+                    />
                   ))}
                 </div>
               )}
@@ -1191,7 +1304,11 @@ function App() {
                 <form onSubmit={async (e) => {
                   e.preventDefault()
                   if (!newDraftName.trim()) {
-                    alert('Please enter a draft name')
+                    toast({
+                      variant: 'warning',
+                      title: 'Missing Name',
+                      description: 'Please enter a draft name',
+                    })
                     return
                   }
                   try {
@@ -1209,14 +1326,18 @@ function App() {
                     setCurrentDraft(draft as any)
                   } catch (error) {
                     console.error('Failed to create draft:', error)
-                    alert('Failed to create draft.')
+                    toast({
+                      variant: 'destructive',
+                      title: 'Failed',
+                      description: 'Failed to create draft.',
+                    })
                   } finally {
                     setCreatingDraft(false)
                   }
                 }}>
                   <div className="form-group">
-                    <label htmlFor="draft-name">Name *</label>
-                    <input
+                    <Label htmlFor="draft-name">Name *</Label>
+                    <Input
                       type="text"
                       id="draft-name"
                       value={newDraftName}
@@ -1227,8 +1348,8 @@ function App() {
                     />
                   </div>
                   <div className="form-group">
-                    <label htmlFor="draft-description">Description</label>
-                    <textarea
+                    <Label htmlFor="draft-description">Description</Label>
+                    <Textarea
                       id="draft-description"
                       value={newDraftDescription}
                       onChange={(e) => setNewDraftDescription(e.target.value)}
@@ -1237,12 +1358,12 @@ function App() {
                     />
                   </div>
                   <div style={{ display: 'flex', gap: '10px' }}>
-                    <button type="submit" className="btn-primary" disabled={creatingDraft}>
+                    <Button type="submit" disabled={creatingDraft}>
                       {creatingDraft ? 'Creating...' : 'Create Draft'}
-                    </button>
-                    <button 
+                    </Button>
+                    <Button 
                       type="button" 
-                      className="btn-secondary"
+                      variant="secondary"
                       onClick={() => {
                         setShowCreateDraftForm(false)
                         setNewDraftName('')
@@ -1251,7 +1372,7 @@ function App() {
                       disabled={creatingDraft}
                     >
                       Cancel
-                    </button>
+                    </Button>
                   </div>
                 </form>
               </div>
@@ -1302,7 +1423,11 @@ function App() {
                             setCurrentDraft(draft as any)
                           } catch (error) {
                             console.error('Failed to create draft from template:', error)
-                            alert('Failed to create draft from template.')
+                            toast({
+                              variant: 'destructive',
+                              title: 'Failed',
+                              description: 'Failed to create draft from template.',
+                            })
                           } finally {
                             setCreatingDraft(false)
                           }
@@ -1394,8 +1519,8 @@ function App() {
                 <h2>Create New Workflow</h2>
                 <form onSubmit={handleCreateWorkflow}>
                   <div className="form-group">
-                    <label htmlFor="name">Name</label>
-                    <input
+                    <Label htmlFor="name">Name</Label>
+                    <Input
                       type="text"
                       id="name"
                       value={newWorkflow.name}
@@ -1405,8 +1530,8 @@ function App() {
                     />
                   </div>
                   <div className="form-group">
-                    <label htmlFor="description">Description</label>
-                    <textarea
+                    <Label htmlFor="description">Description</Label>
+                    <Textarea
                       id="description"
                       value={newWorkflow.description}
                       onChange={(e) =>
@@ -1416,80 +1541,37 @@ function App() {
                       rows={3}
                     />
                   </div>
-                  <button type="submit" className="btn-primary">
+                  <Button type="submit">
                     Create Workflow
-                  </button>
+                  </Button>
                 </form>
               </div>
             )}
 
             <div className="workflows-container">
               {loading ? (
-                <div className="loading">Loading workflows...</div>
+                <LoadingState message="Loading workflows..." />
               ) : workflows.length === 0 ? (
-                <div className="empty-state">
+                <EmptyState>
                   <p>No workflows yet. Create your first workflow to get started!</p>
-                </div>
+                </EmptyState>
               ) : (
                 <div className="workflows-grid">
                   {workflows.map((workflow) => (
-                    <div key={workflow.id} className="workflow-card">
-                      <div className="workflow-header">
-                        <h3>{workflow.name}</h3>
-                        <div
-                          className="status-badge"
-                          style={{ backgroundColor: getStatusColor(workflow.status) }}
-                        >
-                          {workflow.status}
-                        </div>
-                      </div>
-                      <p className="workflow-description">
-                        {workflow.description || 'No description'}
-                      </p>
-                      <div className="workflow-meta">
-                        <small>Created: {new Date(workflow.created_at).toLocaleDateString()}</small>
-                      </div>
-                      <div className="workflow-actions" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '1rem' }}>
-                        <button
-                          className="btn-primary"
-                          onClick={() => handleExecuteWorkflow(workflow.id)}
-                          disabled={executingWorkflowId === workflow.id}
-                        >
-                          {executingWorkflowId === workflow.id ? 'Starting…' : 'Run'}
-                        </button>
-                        <select
-                          value={workflow.status}
-                          onChange={(e) => handleStatusChange(workflow.id, e.target.value)}
-                          className="status-select"
-                        >
-                          <option value="draft">Draft</option>
-                          <option value="active">Active</option>
-                          <option value="paused">Paused</option>
-                          <option value="completed">Completed</option>
-                        </select>
-                        <button
-                          className="btn-secondary"
-                          onClick={() => handleExportWorkflow(workflow.id)}
-                          title="Export workflow"
-                        >
-                          Export
-                        </button>
-                        <button
-                          className="btn-danger"
-                          onClick={() => handleDeleteWorkflow(workflow.id)}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                      {workflowRuns[workflow.id] && workflowRuns[workflow.id].length > 0 && (
-                        <div style={{ marginTop: '0.5rem', fontSize: '0.875rem', color: '#888' }}>
-                          <strong>Runs:</strong> {workflowRuns[workflow.id].length}
-                          {workflowRuns[workflow.id].some((r) => r.status === 'running') && (
-                            <span style={{ color: '#10b981', marginLeft: '0.5rem' }}>● Running</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                    <WorkflowCard
+                      key={workflow.id}
+                      id={workflow.id}
+                      name={workflow.name}
+                      description={workflow.description}
+                      status={workflow.status}
+                      createdAt={workflow.created_at}
+                      runs={workflowRuns[workflow.id]}
+                      onRun={() => handleExecuteWorkflow(workflow.id)}
+                      onStatusChange={(value) => handleStatusChange(workflow.id, value)}
+                      onExport={() => handleExportWorkflow(workflow.id)}
+                      onDelete={() => handleDeleteWorkflow(workflow.id)}
+                      executing={executingWorkflowId === workflow.id}
+                    />
                   ))}
                 </div>
               )}
@@ -1498,228 +1580,37 @@ function App() {
             <section className="connector-section">
               <div className="connector-header">
                 <h3>Connector Health</h3>
-                <button
-                  className="btn-secondary"
+                <Button
+                  variant="secondary"
                   type="button"
                   onClick={loadConnectors}
                   disabled={connectorLoading}
                 >
                   {connectorLoading ? 'Refreshing…' : 'Refresh'}
-                </button>
-                <button
-                  className="btn-secondary"
-                  type="button"
-                  onClick={() => setShowConnectorForm((prev) => !prev)}
-                >
-                  {showConnectorForm ? 'Cancel' : 'Add Connector'}
-                </button>
+                </Button>
               </div>
-              {showConnectorForm && (
-                <div className="connector-form-card">
-                  <form className="notification-form" onSubmit={handleRegisterConnector}>
-                    {!selectedConnectorType ? (
-                      <>
-                        <h4 style={{ marginBottom: '1rem', color: '#fff' }}>Select Connector Type</h4>
-                        <div style={{ display: 'flex', gap: '1rem', flexDirection: 'column' }}>
-                          <button
-                            type="button"
-                            className="btn-primary"
-                            onClick={() => setSelectedConnectorType('claude')}
-                            style={{ width: '100%', padding: '1rem' }}
-                          >
-                            Claude (Anthropic)
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-primary"
-                            onClick={() => setSelectedConnectorType('chatgpt')}
-                            style={{ width: '100%', padding: '1rem' }}
-                          >
-                            ChatGPT (OpenAI)
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            onClick={() => setSelectedConnectorType(null)}
-                            style={{ padding: '0.5rem 1rem' }}
-                          >
-                            ← Back
-                          </button>
-                          <h4 style={{ color: '#fff', margin: 0 }}>
-                            {selectedConnectorType === 'claude' ? 'Claude (Anthropic)' : 'ChatGPT (OpenAI)'}
-                          </h4>
-                        </div>
-                        <div className="form-group">
-                          <label htmlFor="connector-api-key">
-                            API Key
-                            {selectedConnectorType === 'claude' && (
-                              <small style={{ display: 'block', color: '#888', marginTop: '0.25rem' }}>
-                                Get your API key from{' '}
-                                <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer" style={{ color: '#667eea' }}>
-                                  Anthropic Console
-                                </a>
-                              </small>
-                            )}
-                            {selectedConnectorType === 'chatgpt' && (
-                              <small style={{ display: 'block', color: '#888', marginTop: '0.25rem' }}>
-                                Get your API key from{' '}
-                                <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" style={{ color: '#667eea' }}>
-                                  OpenAI Platform
-                                </a>
-                              </small>
-                            )}
-                          </label>
-                  <input
-                    id="connector-api-key"
-                    type="password"
-                    value={connectorApiKey}
-                    onChange={(e) => {
-                      const newValue = e.target.value
-                      setConnectorApiKey(newValue)
-                      
-                      // Clear previous errors when user types
-                      if (connectorError) {
-                        setConnectorError(null)
-                      }
-                      
-                      // Validate format as user types (but don't block)
-                      if (newValue.trim().length > 0) {
-                        const validation = validateApiKey(newValue, selectedConnectorType)
-                        if (!validation.valid && newValue.trim().length > 5) {
-                          // Only show error if they've typed enough to see the pattern
-                          setConnectorError(validation.error || 'Invalid API key format')
-                        } else if (validation.valid) {
-                          setConnectorError(null)
-                        }
-                      }
-                      
-                      // Load models when API key is entered and valid
-                      if (newValue.trim().length > 10) {
-                        const keyValidation = validateApiKey(newValue, selectedConnectorType)
-                        if (keyValidation.valid) {
-                          loadConnectorModels(selectedConnectorType, newValue)
-                        }
-                      } else {
-                        setConnectorAvailableModels([])
-                        setConnectorSelectedModel('')
-                      }
-                    }}
-                    placeholder={selectedConnectorType === 'claude' ? 'sk-ant-...' : 'sk-...'}
-                    required
-                    autoFocus
-                  />
-                  {connectorApiKey.trim().length > 0 && (
-                    <small style={{ display: 'block', color: connectorError ? '#ef4444' : '#888', marginTop: '0.25rem', fontSize: '0.75rem' }}>
-                      {connectorError || (selectedConnectorType === 'claude' 
-                        ? 'Format: sk-ant-... (48+ characters)'
-                        : 'Format: sk-... (48+ characters)')}
-                    </small>
-                  )}
-                </div>
-                {connectorAvailableModels.length > 0 && (
-                  <div className="form-group">
-                    <label htmlFor="connector-model">
-                      Model
-                      <small style={{ display: 'block', color: '#888', marginTop: '0.25rem', fontSize: '0.75rem' }}>
-                        If your model isn't listed, you can type it manually below
-                      </small>
-                    </label>
-                    {connectorLoadingModels ? (
-                      <div style={{ color: '#888', fontSize: '0.875rem' }}>Loading models...</div>
-                    ) : (
-                      <>
-                        <select
-                          id="connector-model"
-                          value={connectorSelectedModel}
-                          onChange={(e) => setConnectorSelectedModel(e.target.value)}
-                          style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#1a1a1a', color: '#fff', marginBottom: '0.5rem' }}
-                        >
-                          {connectorAvailableModels.map((model) => (
-                            <option key={model.id} value={model.id}>
-                              {model.displayName || model.name || model.id}
-                            </option>
-                          ))}
-                          <option value="__custom__">Custom model (enter below)</option>
-                        </select>
-                        {connectorSelectedModel === '__custom__' && (
-                          <input
-                            type="text"
-                            placeholder="Enter model name (e.g., claude-3-5-sonnet-20241022)"
-                            value={connectorCustomModel}
-                            onChange={(e) => {
-                              setConnectorCustomModel(e.target.value.trim())
-                            }}
-                            style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#1a1a1a', color: '#fff' }}
-                          />
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-                <button 
-                  className="btn-primary" 
-                  type="submit" 
-                  disabled={connectorSubmitting || connectorLoadingModels || (connectorSelectedModel === '__custom__' && !connectorCustomModel.trim())}
-                >
-                  {connectorSubmitting ? 'Saving…' : 'Connect'}
-                </button>
-                      </>
-                    )}
-                  </form>
-                </div>
-              )}
-              {connectorError && <div className="test-error">{connectorError}</div>}
               {connectorLoading ? (
-                <div className="loading small">Loading connectors…</div>
+                <LoadingState small message="Loading connectors…" />
               ) : connectors.length === 0 ? (
-                <div className="empty-state compact">
+                <EmptyState compact>
                   <p>No connectors registered.</p>
-                </div>
+                </EmptyState>
               ) : (
                 <div className="connector-grid">
                   {connectors.map((connector) => (
-                    <div key={connector.id} className="connector-card">
-                      <div className="connector-card-header">
-                        <div>
-                          <h4>{connector.name}</h4>
-                          <small>
-                            {connector.kind} · v{connector.version}
-                          </small>
-                        </div>
-                        <span
-                          className={`suite-status ${connector.status === 'ready' ? 'status-passed' : connector.status === 'error' ? 'status-failed' : 'status-idle'}`}
-                        >
-                          {connector.status.toUpperCase()}
-                        </span>
-                      </div>
-                      {connector.description && <p>{connector.description}</p>}
-                      {connector.lastHealthCheck && (
-                        <div className="connector-health">
-                          <strong>{connector.lastHealthCheck.status.toUpperCase()}</strong>
-                          <span>{connector.lastHealthCheck.message ?? 'OK'}</span>
-                        </div>
-                      )}
-                      <button
-                        className="btn-secondary"
-                        type="button"
-                        onClick={() => handleTestConnector(connector.id)}
-                        disabled={connectorLoading}
-                      >
-                        Run Health Check
-                      </button>
-                      <button
-                        className="btn-danger"
-                        type="button"
-                        onClick={() => handleRemoveConnector(connector.id)}
-                      >
-                        Remove
-                      </button>
-                    </div>
+                    <ConnectorCard
+                      key={connector.id}
+                      id={connector.id}
+                      name={connector.name}
+                      kind={connector.kind}
+                      version={connector.version}
+                      status={connector.status as 'ready' | 'error' | 'warning' | 'idle'}
+                      description={connector.description}
+                      healthCheck={connector.lastHealthCheck}
+                      onTest={() => handleTestConnector(connector.id)}
+                      onRemove={() => handleRemoveConnector(connector.id)}
+                      testLoading={connectorLoading}
+                    />
                   ))}
                 </div>
               )}
@@ -1728,22 +1619,22 @@ function App() {
             <section className="document-section">
               <div className="document-header">
                 <h3>Document Workspace</h3>
-                <button
-                  className="btn-secondary"
+                <Button
+                  variant="secondary"
                   type="button"
                   onClick={loadDocuments}
                   disabled={documentsLoading}
                 >
                   {documentsLoading ? 'Refreshing…' : 'Refresh'}
-                </button>
+                </Button>
               </div>
               <div className="document-grid">
                 <div className="document-form-card">
                   <h4>Export Document</h4>
                   <form onSubmit={handleExportDocument}>
                     <div className="form-group">
-                      <label htmlFor="doc-name">Name</label>
-                      <input
+                      <Label htmlFor="doc-name">Name</Label>
+                      <Input
                         id="doc-name"
                         type="text"
                         value={documentForm.name}
@@ -1752,25 +1643,26 @@ function App() {
                       />
                     </div>
                     <div className="form-group">
-                      <label htmlFor="doc-format">Format</label>
-                      <select
-                        id="doc-format"
+                      <Label htmlFor="doc-format">Format</Label>
+                      <Select
                         value={documentForm.format}
-                        onChange={(e) =>
-                          handleDocumentFormChange(
-                            'format',
-                            e.target.value as DocumentRecord['type']
-                          )
+                        onValueChange={(value) =>
+                          handleDocumentFormChange('format', value as DocumentRecord['type'])
                         }
                       >
-                        <option value="markdown">Markdown</option>
-                        <option value="docx">DOCX</option>
-                        <option value="pdf">PDF</option>
-                      </select>
+                        <SelectTrigger id="doc-format">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="markdown">Markdown</SelectItem>
+                          <SelectItem value="docx">DOCX</SelectItem>
+                          <SelectItem value="pdf">PDF</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="form-group">
-                      <label htmlFor="doc-content">Content</label>
-                      <textarea
+                      <Label htmlFor="doc-content">Content</Label>
+                      <Textarea
                         id="doc-content"
                         rows={5}
                         value={documentForm.content}
@@ -1778,19 +1670,19 @@ function App() {
                         placeholder="## Release Notes..."
                       />
                     </div>
-                    <button className="btn-primary" type="submit" disabled={isExportingDocument}>
+                    <Button type="submit" disabled={isExportingDocument}>
                       {isExportingDocument ? 'Exporting…' : 'Export Document'}
-                    </button>
+                    </Button>
                   </form>
                 </div>
                 <div className="document-list-card">
                   <h4>Recent Documents</h4>
                   {documentsLoading ? (
-                    <div className="loading small">Loading documents…</div>
+                    <LoadingState small message="Loading documents…" />
                   ) : documents.length === 0 ? (
-                    <div className="empty-state compact">
+                    <EmptyState compact>
                       <p>No documents exported yet.</p>
-                    </div>
+                    </EmptyState>
                   ) : (
                     <div className="document-list">
                       {documents.map((doc) => (
@@ -1865,16 +1757,18 @@ function App() {
                       </div>
                       <div className="test-suite-actions">
                         <div className="run-all-group">
-                          <button
-                            className="btn-secondary run-all"
+                          <Button
+                            variant="secondary"
+                            className="run-all"
                             type="button"
                             onClick={handleRunAllSuites}
                             disabled={runningSuiteId !== null}
                           >
                             {runningSuiteId === 'all' ? 'Running All…' : 'Run All Suites'}
-                          </button>
-                          <button
-                            className="btn-secondary download-all"
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            className="download-all"
                             type="button"
                             onClick={handleExportAllResults}
                             disabled={
@@ -1882,16 +1776,16 @@ function App() {
                             }
                           >
                             {isExportingAll ? 'Saving...' : 'Download Results'}
-                          </button>
+                          </Button>
                         </div>
-                        <button
-                          className="btn-secondary"
+                        <Button
+                          variant="secondary"
                           type="button"
                           onClick={() => handleRunSuite(currentSuite.id)}
                           disabled={runningSuiteId === currentSuite.id || runningSuiteId === 'all'}
                         >
                           {runningSuiteId === currentSuite.id ? 'Running...' : 'Run Selected Tests'}
-                        </button>
+                        </Button>
                       </div>
                     </div>
 
@@ -1962,41 +1856,38 @@ function App() {
 
         {activeTab === 'diagnostics' && (
           <div className="diagnostics-grid">
-            <section className="diagnostic-card">
-              <div className="diagnostic-card-header">
-                <div>
-                  <h3>Logging</h3>
-                  <p>Current application log destination.</p>
-                </div>
-                <div className="diagnostic-actions">
-                  <button className="btn-secondary" type="button" onClick={loadDiagnostics}>
+            <DiagnosticCard
+              title="Logging"
+              description="Current application log destination"
+              actions={
+                <>
+                  <Button variant="secondary" type="button" onClick={loadDiagnostics}>
                     Refresh
-                  </button>
-                  <button
-                    className="btn-secondary"
+                  </Button>
+                  <Button
+                    variant="secondary"
                     type="button"
                     onClick={handleCopyLogPath}
                     disabled={!logPath}
                   >
                     Copy Path
-                  </button>
-                </div>
-              </div>
+                  </Button>
+                </>
+              }
+            >
               {diagnosticsLoading && !logPath ? (
-                <div className="loading small">Loading log path…</div>
+                <LoadingState small message="Loading log path…" />
               ) : (
                 <code className="log-path">{logPath || 'Log path unavailable'}</code>
               )}
-            </section>
+            </DiagnosticCard>
 
-            <section className="diagnostic-card">
-              <div className="diagnostic-card-header">
-                <div>
-                  <h3>Telemetry</h3>
-                  <p>Opt-in diagnostic payload generation.</p>
-                </div>
-                <button
-                  className="btn-secondary"
+            <DiagnosticCard
+              title="Telemetry"
+              description="Opt-in diagnostic payload generation"
+              actions={
+                <Button
+                  variant="secondary"
                   type="button"
                   onClick={handleTelemetryToggle}
                   disabled={telemetryUpdating}
@@ -2006,30 +1897,28 @@ function App() {
                     : telemetryEnabled
                       ? 'Disable Telemetry'
                       : 'Enable Telemetry'}
-                </button>
-              </div>
+                </Button>
+              }
+            >
               <p className="diagnostic-subtext">
                 Status:{' '}
                 <strong className={telemetryEnabled ? 'status-enabled' : 'status-disabled'}>
                   {telemetryEnabled ? 'Enabled' : 'Disabled'}
                 </strong>
               </p>
-            </section>
+            </DiagnosticCard>
 
-            <section className="diagnostic-card">
-              <div className="diagnostic-card-header">
-                <div>
-                  <h3>Notification Preferences</h3>
-                  <p>Quiet hours and delivery channels.</p>
-                </div>
-              </div>
+            <DiagnosticCard
+              title="Notification Preferences"
+              description="Quiet hours and delivery channels"
+            >
               {!notifications ? (
-                <div className="loading small">Loading notification preferences…</div>
+                <LoadingState small message="Loading notification preferences…" />
               ) : (
                 <form className="notification-form" onSubmit={handleNotificationSave}>
                   <div className="form-group inline">
-                    <label htmlFor="quiet-start">Quiet Start</label>
-                    <input
+                    <Label htmlFor="quiet-start">Quiet Start</Label>
+                    <Input
                       id="quiet-start"
                       type="time"
                       value={notificationForm.quietStart}
@@ -2037,8 +1926,8 @@ function App() {
                     />
                   </div>
                   <div className="form-group inline">
-                    <label htmlFor="quiet-end">Quiet End</label>
-                    <input
+                    <Label htmlFor="quiet-end">Quiet End</Label>
+                    <Input
                       id="quiet-end"
                       type="time"
                       value={notificationForm.quietEnd}
@@ -2046,30 +1935,28 @@ function App() {
                     />
                   </div>
                   <div className="form-group">
-                    <label htmlFor="channels">Channels (comma-separated)</label>
-                    <input
+                    <Label htmlFor="channels">Channels (comma-separated)</Label>
+                    <Input
                       id="channels"
                       type="text"
                       value={notificationForm.channels}
                       onChange={(e) => handleNotificationInputChange('channels', e.target.value)}
                     />
                   </div>
-                  <button className="btn-primary" type="submit" disabled={notificationSaving}>
+                  <Button type="submit" disabled={notificationSaving}>
                     {notificationSaving ? 'Saving…' : 'Save Preferences'}
-                  </button>
+                  </Button>
                 </form>
               )}
-            </section>
+            </DiagnosticCard>
 
-            <section className="diagnostic-card span-2">
-              <div className="diagnostic-card-header">
-                <div>
-                  <h3>Schedules</h3>
-                  <p>Upcoming workflow runs from SchedulerService.</p>
-                </div>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button
-                    className="btn-primary"
+            <DiagnosticCard
+              span={2}
+              title="Schedules"
+              description="Upcoming workflow runs from SchedulerService"
+              actions={
+                <>
+                  <Button
                     type="button"
                     onClick={() => {
                       setScheduleForm({
@@ -2089,29 +1976,30 @@ function App() {
                     }}
                   >
                     + Add Schedule
-                  </button>
-                  <button
-                    className="btn-secondary"
+                  </Button>
+                  <Button
+                    variant="secondary"
                     type="button"
                     onClick={refreshSchedules}
                     disabled={schedulesLoading}
                   >
                     {schedulesLoading ? 'Refreshing…' : 'Refresh'}
-                  </button>
-                </div>
-              </div>
+                  </Button>
+                </>
+              }
+            >
               {schedulesLoading && !schedules.length ? (
-                <div className="loading small">Loading schedules…</div>
+                <LoadingState small message="Loading schedules…" />
               ) : schedules.length === 0 ? (
-                <div className="empty-state compact">
+                <EmptyState compact>
                   <p>No schedules created yet.</p>
-                </div>
+                </EmptyState>
               ) : (
                 <div className="diagnostic-table-wrapper">
                   <table className="diagnostic-table">
                     <thead>
                       <tr>
-                        <th>ID</th>
+                        <th>#</th>
                         <th>Workflow</th>
                         <th>Cron</th>
                         <th>Timezone</th>
@@ -2122,11 +2010,11 @@ function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {schedules.map((schedule) => {
+                      {schedules.map((schedule, index) => {
                         const workflow = workflows.find(w => w.id === schedule.workflowId)
                         return (
                           <tr key={schedule.id}>
-                            <td>#{schedule.id}</td>
+                            <td>#{index + 1}</td>
                             <td>{workflow ? workflow.name : `Workflow #${schedule.workflowId}`}</td>
                             <td><code style={{ fontSize: '12px', background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px' }}>{schedule.cron}</code></td>
                             <td>{schedule.timezone ?? 'UTC'}</td>
@@ -2141,8 +2029,73 @@ function App() {
                             </td>
                             <td>
                               <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                <button
-                                  className="btn-secondary"
+                                <Button
+                                  variant="secondary"
+                                  style={{ fontSize: '12px', padding: '4px 8px' }}
+                                  onClick={() => {
+                                    // Parse cron to populate form
+                                    const cron = schedule.cron
+                                    let cronPattern: 'custom' | 'daily' | 'weekly' | 'monthly' | 'hourly' = 'custom'
+                                    let dailyTime = '09:00'
+                                    let weeklyDay = 'monday'
+                                    let weeklyTime = '09:00'
+                                    let monthlyDay = '1'
+                                    let monthlyTime = '09:00'
+                                    let hourlyMinute = '0'
+                                    
+                                    // Try to parse cron pattern
+                                    const parts = cron.split(' ')
+                                    if (parts.length === 5) {
+                                      const [minute, hour, day, month, dayOfWeek] = parts
+                                      
+                                      // Daily: minute hour * * *
+                                      if (day === '*' && month === '*' && dayOfWeek === '*') {
+                                        cronPattern = 'daily'
+                                        dailyTime = `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`
+                                      }
+                                      // Weekly: minute hour * * dayOfWeek
+                                      else if (day === '*' && month === '*') {
+                                        cronPattern = 'weekly'
+                                        const dayMap: Record<string, string> = {
+                                          '0': 'sunday', '1': 'monday', '2': 'tuesday', '3': 'wednesday',
+                                          '4': 'thursday', '5': 'friday', '6': 'saturday'
+                                        }
+                                        weeklyDay = dayMap[dayOfWeek] || 'monday'
+                                        weeklyTime = `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`
+                                      }
+                                      // Monthly: minute hour day * *
+                                      else if (month === '*' && dayOfWeek === '*') {
+                                        cronPattern = 'monthly'
+                                        monthlyDay = day
+                                        monthlyTime = `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`
+                                      }
+                                      // Hourly: minute * * * *
+                                      else if (hour === '*' && day === '*' && month === '*' && dayOfWeek === '*') {
+                                        cronPattern = 'hourly'
+                                        hourlyMinute = minute
+                                      }
+                                    }
+                                    
+                                    setScheduleForm({
+                                      workflowId: schedule.workflowId.toString(),
+                                      cron: cronPattern === 'custom' ? cron : '',
+                                      timezone: schedule.timezone || 'UTC',
+                                      cronPattern,
+                                      dailyTime,
+                                      weeklyDay,
+                                      weeklyTime,
+                                      monthlyDay,
+                                      monthlyTime,
+                                      hourlyMinute
+                                    })
+                                    setEditingScheduleId(schedule.id)
+                                    setShowScheduleForm(true)
+                                  }}
+                                >
+                                  Edit
+                                </Button>
+                                <Button
+                                  variant="secondary"
                                   style={{ fontSize: '12px', padding: '4px 8px' }}
                                   onClick={async () => {
                                     if (schedule.status === 'active') {
@@ -2154,19 +2107,19 @@ function App() {
                                   }}
                                 >
                                   {schedule.status === 'active' ? 'Pause' : 'Resume'}
-                                </button>
-                                <button
-                                  className="btn-danger"
+                                </Button>
+                                <Button
+                                  variant="destructive"
                                   style={{ fontSize: '12px', padding: '4px 8px' }}
                                   onClick={async () => {
-                                    if (confirm(`Delete schedule #${schedule.id}?`)) {
+                                    if (confirm(`Delete schedule #${index + 1}?`)) {
                                       await window.electronAPI.deleteSchedule(schedule.id)
                                       await refreshSchedules()
                                     }
                                   }}
                                 >
                                   Delete
-                                </button>
+                                </Button>
                               </div>
                             </td>
                           </tr>
@@ -2176,34 +2129,197 @@ function App() {
                   </table>
                 </div>
               )}
-            </section>
+            </DiagnosticCard>
           </div>
         )}
 
         {activeTab === 'settings' && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1.5rem' }}>
             {/* Connector Settings */}
-            <section className="diagnostic-card">
-              <div className="diagnostic-card-header">
-                <div>
-                  <h3>Connector Settings</h3>
-                  <p>Manage LLM connectors and API keys.</p>
+            <DiagnosticCard
+              title="Connector Settings"
+              description="Manage LLM connectors and API keys"
+              actions={
+                <>
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    onClick={loadConnectors}
+                    disabled={connectorLoading}
+                  >
+                    {connectorLoading ? 'Refreshing…' : 'Refresh'}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    onClick={() => setShowConnectorForm((prev) => !prev)}
+                  >
+                    {showConnectorForm ? 'Cancel' : 'Add Connector'}
+                  </Button>
+                </>
+              }
+            >
+              {showConnectorForm && (
+                <div className="connector-form-card" style={{ marginBottom: '1rem' }}>
+                  <form className="notification-form" onSubmit={handleRegisterConnector}>
+                    {!selectedConnectorType ? (
+                      <>
+                        <h4 style={{ marginBottom: '1rem', color: '#fff' }}>Select Connector Type</h4>
+                        <div style={{ display: 'flex', gap: '1rem', flexDirection: 'column' }}>
+                          <Button
+                            type="button"
+                            onClick={() => setSelectedConnectorType('claude')}
+                            style={{ width: '100%', padding: '1rem' }}
+                          >
+                            Claude (Anthropic)
+                          </Button>
+                          <Button
+                            type="button"
+                            onClick={() => setSelectedConnectorType('chatgpt')}
+                            style={{ width: '100%', padding: '1rem' }}
+                          >
+                            ChatGPT (OpenAI)
+                          </Button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => setSelectedConnectorType(null)}
+                            style={{ padding: '0.5rem 1rem' }}
+                          >
+                            ← Back
+                          </Button>
+                          <h4 style={{ color: '#fff', margin: 0 }}>
+                            {selectedConnectorType === 'claude' ? 'Claude (Anthropic)' : 'ChatGPT (OpenAI)'}
+                          </h4>
+                        </div>
+                        <div className="form-group">
+                          <Label htmlFor="connector-api-key">
+                            API Key
+                            {selectedConnectorType === 'claude' && (
+                              <small style={{ display: 'block', color: '#888', marginTop: '0.25rem' }}>
+                                Get your API key from{' '}
+                                <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer" style={{ color: '#667eea' }}>
+                                  Anthropic Console
+                                </a>
+                              </small>
+                            )}
+                            {selectedConnectorType === 'chatgpt' && (
+                              <small style={{ display: 'block', color: '#888', marginTop: '0.25rem' }}>
+                                Get your API key from{' '}
+                                <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" style={{ color: '#667eea' }}>
+                                  OpenAI Platform
+                                </a>
+                              </small>
+                            )}
+                          </Label>
+                          <Input
+                            id="connector-api-key"
+                            type="password"
+                            value={connectorApiKey}
+                            onChange={(e) => {
+                              const newValue = e.target.value
+                              setConnectorApiKey(newValue)
+                              
+                              if (connectorError) {
+                                setConnectorError(null)
+                              }
+                              
+                              if (newValue.trim().length > 0) {
+                                const validation = validateApiKey(newValue, selectedConnectorType)
+                                if (!validation.valid && newValue.trim().length > 5) {
+                                  setConnectorError(validation.error || 'Invalid API key format')
+                                } else if (validation.valid) {
+                                  setConnectorError(null)
+                                }
+                              }
+                              
+                              if (newValue.trim().length > 10) {
+                                const keyValidation = validateApiKey(newValue, selectedConnectorType)
+                                if (keyValidation.valid) {
+                                  loadConnectorModels(selectedConnectorType, newValue)
+                                }
+                              } else {
+                                setConnectorAvailableModels([])
+                                setConnectorSelectedModel('')
+                              }
+                            }}
+                            placeholder={selectedConnectorType === 'claude' ? 'sk-ant-...' : 'sk-...'}
+                            required
+                            autoFocus
+                          />
+                          {connectorApiKey.trim().length > 0 && (
+                            <small style={{ display: 'block', color: connectorError ? '#ef4444' : '#888', marginTop: '0.25rem', fontSize: '0.75rem' }}>
+                              {connectorError || (selectedConnectorType === 'claude' 
+                                ? 'Format: sk-ant-... (48+ characters)'
+                                : 'Format: sk-... (48+ characters)')}
+                            </small>
+                          )}
+                        </div>
+                        {connectorAvailableModels.length > 0 && (
+                          <div className="form-group">
+                            <Label htmlFor="connector-model">
+                              Model
+                              <small style={{ display: 'block', color: '#888', marginTop: '0.25rem', fontSize: '0.75rem' }}>
+                                If your model isn't listed, you can type it manually below
+                              </small>
+                            </Label>
+                            {connectorLoadingModels ? (
+                              <div style={{ color: '#888', fontSize: '0.875rem' }}>Loading models...</div>
+                            ) : (
+                              <>
+                                <Select
+                                  value={connectorSelectedModel}
+                                  onValueChange={setConnectorSelectedModel}
+                                >
+                                  <SelectTrigger id="connector-model" style={{ marginBottom: '0.5rem' }}>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {connectorAvailableModels.map((model) => (
+                                      <SelectItem key={model.id} value={model.id}>
+                                        {model.displayName || model.name || model.id}
+                                      </SelectItem>
+                                    ))}
+                                    <SelectItem value="__custom__">Custom model (enter below)</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                {connectorSelectedModel === '__custom__' && (
+                                  <Input
+                                    type="text"
+                                    placeholder="Enter model name (e.g., claude-3-5-sonnet-20241022)"
+                                    value={connectorCustomModel}
+                                    onChange={(e) => {
+                                      setConnectorCustomModel(e.target.value.trim())
+                                    }}
+                                  />
+                                )}
+                              </>
+                            )}
+                          </div>
+                        )}
+                        <Button 
+                          type="submit" 
+                          disabled={connectorSubmitting || connectorLoadingModels || (connectorSelectedModel === '__custom__' && !connectorCustomModel.trim())}
+                        >
+                          {connectorSubmitting ? 'Saving…' : 'Connect'}
+                        </Button>
+                      </>
+                    )}
+                  </form>
                 </div>
-                <button
-                  className="btn-secondary"
-                  type="button"
-                  onClick={loadConnectors}
-                  disabled={connectorLoading}
-                >
-                  {connectorLoading ? 'Refreshing…' : 'Refresh'}
-                </button>
-              </div>
+              )}
+              {connectorError && <div className="test-error">{connectorError}</div>}
               {connectorLoading && !connectors.length ? (
-                <div className="loading small">Loading connectors…</div>
+                <LoadingState small message="Loading connectors…" />
               ) : connectors.length === 0 ? (
-                <div className="empty-state compact">
-                  <p>No connectors registered. Use the "Connector Health" section to add connectors.</p>
-                </div>
+                <EmptyState compact>
+                  <p>No connectors registered. Click "Add Connector" to get started.</p>
+                </EmptyState>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                   {connectors.map((connector) => (
@@ -2232,8 +2348,8 @@ function App() {
                           </div>
                         )}
                       </div>
-                      <button
-                        className="btn-danger"
+                      <Button
+                        variant="destructive"
                         style={{ fontSize: '12px', padding: '4px 8px' }}
                         onClick={async () => {
                           await window.electronAPI.removeConnector(connector.id)
@@ -2241,71 +2357,57 @@ function App() {
                         }}
                       >
                         Remove
-                      </button>
+                      </Button>
                     </div>
                   ))}
                 </div>
               )}
-            </section>
+            </DiagnosticCard>
 
             {/* Document Settings */}
-            <section className="diagnostic-card">
-              <div className="diagnostic-card-header">
-                <div>
-                  <h3>Document Settings</h3>
-                  <p>Configure document storage and defaults.</p>
-                </div>
-                <button
-                  className="btn-secondary"
+            <DiagnosticCard
+              title="Document Settings"
+              description="Configure document storage and defaults"
+              actions={
+                <Button
+                  variant="secondary"
                   type="button"
                   onClick={loadDocuments}
                   disabled={documentsLoading}
                 >
                   {documentsLoading ? 'Refreshing…' : 'Refresh'}
-                </button>
-              </div>
+                </Button>
+              }
+            >
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
+                  <Label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
                     Default Document Path
-                  </label>
-                  <input
+                  </Label>
+                  <Input
                     type="text"
-                    placeholder="Configure in ConfigService..."
-                    disabled
-                    style={{
-                      width: '100%',
-                      padding: '8px',
-                      background: '#0a0a0a',
-                      border: '1px solid #444',
-                      borderRadius: '4px',
-                      color: '#888',
-                      fontSize: '14px'
-                    }}
+                    placeholder="Enter default document path..."
                   />
                   <small style={{ color: '#888', fontSize: '12px', display: 'block', marginTop: '4px' }}>
-                    Document path configuration coming soon
+                    Default directory for document storage
                   </small>
                 </div>
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
+                  <Label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
                     Registered Documents ({documents.length})
-                  </label>
+                  </Label>
                   <div style={{ background: 'rgba(255, 255, 255, 0.05)', borderRadius: '4px', padding: '8px', fontSize: '12px', color: '#aaa' }}>
                     {documents.length === 0 ? 'No documents registered' : `${documents.length} document(s) in registry`}
                   </div>
+                  </div>
                 </div>
-              </div>
-            </section>
+              </DiagnosticCard>
 
-            {/* Notification Settings */}
-            <section className="diagnostic-card">
-              <div className="diagnostic-card-header">
-                <div>
-                  <h3>Notification Settings</h3>
-                  <p>Configure notification preferences and quiet hours.</p>
-                </div>
-              </div>
+              {/* Notification Settings */}
+            <DiagnosticCard
+              title="Notification Settings"
+              description="Configure notification preferences and quiet hours"
+            >
               {notifications ? (
                 <form
                   onSubmit={async (e) => {
@@ -2320,18 +2422,26 @@ function App() {
                         channels: notificationForm.channels.split(',').map((c) => c.trim()).filter(Boolean)
                       })
                       await loadDiagnostics()
-                      alert('Notification preferences saved!')
+                      toast({
+                        variant: 'success',
+                        title: 'Saved',
+                        description: 'Notification preferences saved!',
+                      })
                     } catch (error) {
                       console.error('Failed to save notification preferences:', error)
-                      alert('Failed to save notification preferences')
+                      toast({
+                        variant: 'destructive',
+                        title: 'Failed',
+                        description: 'Failed to save notification preferences',
+                      })
                     } finally {
                       setNotificationSaving(false)
                     }
                   }}
                 >
                   <div style={{ marginBottom: '1rem' }}>
-                    <label htmlFor="quietStart">Quiet Hours Start</label>
-                    <input
+                    <Label htmlFor="quietStart">Quiet Hours Start</Label>
+                    <Input
                       id="quietStart"
                       type="time"
                       value={notificationForm.quietStart}
@@ -2339,8 +2449,8 @@ function App() {
                     />
                   </div>
                   <div style={{ marginBottom: '1rem' }}>
-                    <label htmlFor="quietEnd">Quiet Hours End</label>
-                    <input
+                    <Label htmlFor="quietEnd">Quiet Hours End</Label>
+                    <Input
                       id="quietEnd"
                       type="time"
                       value={notificationForm.quietEnd}
@@ -2348,67 +2458,54 @@ function App() {
                     />
                   </div>
                   <div style={{ marginBottom: '1rem' }}>
-                    <label htmlFor="channels">Channels (comma-separated)</label>
-                    <input
+                    <Label htmlFor="channels">Channels (comma-separated)</Label>
+                    <Input
                       id="channels"
                       type="text"
                       value={notificationForm.channels}
                       onChange={(e) => setNotificationForm({ ...notificationForm, channels: e.target.value })}
                     />
                   </div>
-                  <button className="btn-primary" type="submit" disabled={notificationSaving}>
+                  <Button type="submit" disabled={notificationSaving}>
                     {notificationSaving ? 'Saving…' : 'Save Preferences'}
-                  </button>
+                  </Button>
                 </form>
               ) : (
-                <div className="loading small">Loading notification preferences…</div>
+                <LoadingState small message="Loading notification preferences…" />
               )}
-            </section>
+            </DiagnosticCard>
 
             {/* File Sandbox Settings */}
-            <section className="diagnostic-card">
-              <div className="diagnostic-card-header">
-                <div>
-                  <h3>File Sandbox Settings</h3>
-                  <p>Configure allowed directories for file operations.</p>
-                </div>
-              </div>
+            <DiagnosticCard
+              title="File Sandbox Settings"
+              description="Configure allowed directories for file operations"
+            >
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
+                  <Label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
                     Allowed Directories
-                  </label>
-                  <textarea
-                    placeholder="One directory per line..."
-                    disabled
+                  </Label>
+                  <Textarea
+                    placeholder="One directory per line...&#10;Example:&#10;C:\Users\Documents\Workflows&#10;D:\Projects\AI"
                     style={{
-                      width: '100%',
                       minHeight: '100px',
-                      padding: '8px',
-                      background: '#0a0a0a',
-                      border: '1px solid #444',
-                      borderRadius: '4px',
-                      color: '#888',
-                      fontSize: '14px',
                       fontFamily: 'monospace',
                       resize: 'vertical'
                     }}
                   />
                   <small style={{ color: '#888', fontSize: '12px', display: 'block', marginTop: '4px' }}>
-                    File sandbox configuration coming soon
+                    Directories where file operations are allowed. One path per line.
                   </small>
                 </div>
               </div>
-            </section>
+            </DiagnosticCard>
 
             {/* General Settings */}
-            <section className="diagnostic-card span-2">
-              <div className="diagnostic-card-header">
-                <div>
-                  <h3>General Settings</h3>
-                  <p>Application preferences and configuration.</p>
-                </div>
-              </div>
+            <DiagnosticCard
+              span={2}
+              title="General Settings"
+              description="Application preferences and configuration"
+            >
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
@@ -2500,7 +2597,7 @@ function App() {
                   />
                 </div>
               </div>
-            </section>
+            </DiagnosticCard>
           </div>
         )}
       </main>
@@ -2534,6 +2631,12 @@ function App() {
             <h2 style={{ margin: '0 0 20px 0', color: '#fff' }}>
               {editingScheduleId ? 'Edit Schedule' : 'Add Schedule'}
             </h2>
+            
+            {editingScheduleId && (
+              <div style={{ marginBottom: '20px', padding: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px' }}>
+                <small style={{ color: '#888', fontSize: '12px' }}>Schedule ID: {editingScheduleId}</small>
+              </div>
+            )}
             
             <div style={{ marginBottom: '20px' }}>
               <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
@@ -2756,26 +2859,51 @@ function App() {
               </div>
             )}
 
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
-                Timezone
-              </label>
-              <input
-                type="text"
-                value={scheduleForm.timezone}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, timezone: e.target.value })}
-                placeholder="UTC"
-                style={{
-                  width: '100%',
-                  padding: '8px',
-                  background: '#0a0a0a',
-                  border: '1px solid #444',
-                  borderRadius: '4px',
-                  color: '#fff',
-                  fontSize: '14px'
-                }}
-              />
-            </div>
+            {(scheduleForm.cronPattern === 'daily' || scheduleForm.cronPattern === 'weekly' || scheduleForm.cronPattern === 'monthly') && (
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
+                  Timezone
+                </label>
+                <select
+                  value={scheduleForm.timezone}
+                  onChange={(e) => setScheduleForm({ ...scheduleForm, timezone: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    background: '#0a0a0a',
+                    border: '1px solid #444',
+                    borderRadius: '4px',
+                    color: '#fff',
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="UTC">UTC (Coordinated Universal Time)</option>
+                  <option value="America/New_York">America/New_York (Eastern Time)</option>
+                  <option value="America/Chicago">America/Chicago (Central Time)</option>
+                  <option value="America/Denver">America/Denver (Mountain Time)</option>
+                  <option value="America/Los_Angeles">America/Los_Angeles (Pacific Time)</option>
+                  <option value="America/Phoenix">America/Phoenix (Mountain Time - No DST)</option>
+                  <option value="America/Anchorage">America/Anchorage (Alaska Time)</option>
+                  <option value="America/Honolulu">America/Honolulu (Hawaii Time)</option>
+                  <option value="Europe/London">Europe/London (GMT/BST)</option>
+                  <option value="Europe/Paris">Europe/Paris (CET/CEST)</option>
+                  <option value="Europe/Berlin">Europe/Berlin (CET/CEST)</option>
+                  <option value="Europe/Rome">Europe/Rome (CET/CEST)</option>
+                  <option value="Europe/Madrid">Europe/Madrid (CET/CEST)</option>
+                  <option value="Europe/Amsterdam">Europe/Amsterdam (CET/CEST)</option>
+                  <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
+                  <option value="Asia/Shanghai">Asia/Shanghai (CST)</option>
+                  <option value="Asia/Hong_Kong">Asia/Hong_Kong (HKT)</option>
+                  <option value="Asia/Singapore">Asia/Singapore (SGT)</option>
+                  <option value="Asia/Dubai">Asia/Dubai (GST)</option>
+                  <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
+                  <option value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</option>
+                  <option value="Australia/Melbourne">Australia/Melbourne (AEST/AEDT)</option>
+                  <option value="Australia/Brisbane">Australia/Brisbane (AEST)</option>
+                  <option value="Pacific/Auckland">Pacific/Auckland (NZST/NZDT)</option>
+                </select>
+              </div>
+            )}
 
             <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '24px' }}>
               <button
@@ -2792,7 +2920,11 @@ function App() {
                 className="btn-primary"
                 onClick={async () => {
                   if (!scheduleForm.workflowId) {
-                    alert('Please select a workflow')
+                    toast({
+                      variant: 'warning',
+                      title: 'Missing Selection',
+                      description: 'Please select a workflow',
+                    })
                     return
                   }
 
@@ -2829,23 +2961,39 @@ function App() {
                   }
 
                   if (!cronExpression) {
-                    alert('Please provide a cron expression')
+                    toast({
+                      variant: 'warning',
+                      title: 'Missing Expression',
+                      description: 'Please provide a cron expression',
+                    })
                     return
                   }
 
                   try {
                     setScheduleSubmitting(true)
-                    await window.electronAPI.addSchedule(
-                      parseInt(scheduleForm.workflowId),
-                      cronExpression,
-                      { timezone: scheduleForm.timezone || 'UTC' }
-                    )
+                    if (editingScheduleId) {
+                      await window.electronAPI.updateSchedule(
+                        editingScheduleId,
+                        cronExpression,
+                        { timezone: scheduleForm.timezone || 'UTC' }
+                      )
+                    } else {
+                      await window.electronAPI.addSchedule(
+                        parseInt(scheduleForm.workflowId),
+                        cronExpression,
+                        { timezone: scheduleForm.timezone || 'UTC' }
+                      )
+                    }
                     setShowScheduleForm(false)
                     setEditingScheduleId(null)
                     await refreshSchedules()
                   } catch (error) {
-                    console.error('Failed to create schedule:', error)
-                    alert(`Failed to create schedule: ${error instanceof Error ? error.message : String(error)}`)
+                    console.error(`Failed to ${editingScheduleId ? 'update' : 'create'} schedule:`, error)
+                    toast({
+                      variant: 'destructive',
+                      title: 'Failed',
+                      description: `Failed to ${editingScheduleId ? 'update' : 'create'} schedule: ${error instanceof Error ? error.message : String(error)}`,
+                    })
                   } finally {
                     setScheduleSubmitting(false)
                   }
