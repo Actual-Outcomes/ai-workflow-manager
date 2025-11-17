@@ -22,8 +22,16 @@ describe('WorkflowDraftService', () => {
     expect(draft.id).toBeGreaterThan(0)
     expect(draft.version).toBe(1)
     expect(draft.nodes).toEqual([])
+    expect(draft.name).toBe('Workflow A')
+    expect(draft.description).toBe('test description')
+
+    // Verify the created draft is actually in the list
     const drafts = service.listDrafts()
     expect(drafts.length).toBeGreaterThan(0)
+    const foundDraft = drafts.find((d) => d.id === draft.id)
+    expect(foundDraft).toBeDefined()
+    expect(foundDraft?.name).toBe('Workflow A')
+    expect(foundDraft?.description).toBe('test description')
   })
 
   it('updates draft metadata and content, incrementing version', () => {

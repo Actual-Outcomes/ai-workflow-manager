@@ -30,12 +30,23 @@ describe('DocumentService', () => {
       content: '# Hello'
     })
 
+    // Verify path structure and file extension
     expect(result.path).toContain('documents')
     expect(fs.existsSync(result.path)).toBe(true)
+    expect(path.isAbsolute(result.path)).toBe(true)
+    expect(result.path).toMatch(/\.md$/) // Should have .md extension for markdown
+    // Filename is slugified (lowercase, spaces to hyphens) with timestamp
+    expect(path.basename(result.path)).toMatch(/^sprint-summary-\d+\.md$/)
+
+    // Verify file content matches
+    const fileContent = fs.readFileSync(result.path, 'utf-8')
+    expect(fileContent).toBe('# Hello')
 
     const documents = service.listDocuments()
     expect(documents.length).toBe(1)
     expect(documents[0].name).toBe('Sprint Summary')
+    expect(documents[0].type).toBe('markdown')
+    expect(documents[0].path).toBe(result.path)
 
     registry.close()
     ctx.cleanup()

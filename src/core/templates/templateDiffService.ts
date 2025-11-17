@@ -1,3 +1,4 @@
+// @ts-ignore - diff module types available via src/types/diff.d.ts
 import * as Diff from 'diff'
 
 export interface DiffResultLine {

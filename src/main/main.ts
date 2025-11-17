@@ -14,7 +14,12 @@ import { FileConnector } from '../core/files/fileConnector'
 import { WorkflowDraftService } from '../core/workflows/workflowDraftService'
 import { WorkflowDraftContent, WorkflowDraftUpdateInput } from '../core/workflows/workflowTypes'
 import { ValidationService } from '../core/workflows/validationService'
-import { WorkflowRuntime } from '../core/workflows/workflowRuntime'
+import { WorkflowExecutionService } from '../core/workflows/workflowExecutionService'
+import { WorkflowRunRepository } from '../core/workflows/workflowRunRepository'
+import { getWorkflowEventPublisher, WorkflowEvent } from '../core/workflows/workflowEventPublisher'
+import { WorkflowExportService } from '../core/workflows/workflowExportService'
+import { WorkflowImportService } from '../core/workflows/workflowImportService'
+import Database from 'better-sqlite3'
 import { DocumentRegistry } from '../core/documents/documentRegistry'
 import { DocumentService, ExportDocumentPayload } from '../core/documents/documentService'
 import { WorkflowPublishService } from '../core/workflows/workflowPublishService'
@@ -25,6 +30,7 @@ import { SchedulerService } from '../core/scheduler/schedulerService'
 import { SchedulerRunner } from '../core/scheduler/schedulerRunner'
 import { RetentionService } from '../core/ops/retentionService'
 import { TemplateRegistry } from '../core/templates/templateRegistry'
+import { WorkflowTemplateService } from '../core/workflows/workflowTemplateService'
 
 let mainWindow: BrowserWindow | null = null
 let db: WorkflowDatabase
@@ -35,7 +41,10 @@ let auditLog: AuditLogService | null = null
 let fileConnector: FileConnector
 let workflowDraftService: WorkflowDraftService
 let validationService: ValidationService
-let workflowRuntime: WorkflowRuntime
+let workflowExecutionService: WorkflowExecutionService
+let workflowRunRepository: WorkflowRunRepository
+let workflowExportService: WorkflowExportService
+let workflowImportService: WorkflowImportService
 let documentRegistry: DocumentRegistry
 let documentService: DocumentService
 let workflowPublishService: WorkflowPublishService
@@ -46,6 +55,7 @@ let schedulerService: SchedulerService
 let schedulerRunner: SchedulerRunner
 let retentionService: RetentionService
 let templateRegistry: TemplateRegistry
+let workflowTemplateService: WorkflowTemplateService
 const isDevelopment = process.env.NODE_ENV === 'development'
 const testRunner = new TestRunnerService()
 
@@ -124,11 +134,21 @@ app.whenReady().then(async () => {
   connectorRegistry = new ConnectorRegistry(configService, credentialVault)
   fileConnector = new FileConnector()
   validationService = new ValidationService()
-  workflowRuntime = new WorkflowRuntime(validationService)
   workflowDraftService = new WorkflowDraftService(configService, dbPath, validationService)
   documentRegistry = new DocumentRegistry(dbPath)
   documentService = new DocumentService(documentRegistry, fileConnector)
   workflowPublishService = new WorkflowPublishService(db, workflowDraftService, validationService)
+  // Access the internal database instance - WorkflowDatabase wraps better-sqlite3 Database
+  const dbInstance = (db as any).db as Database.Database
+  workflowRunRepository = new WorkflowRunRepository(dbInstance)
+  workflowExecutionService = new WorkflowExecutionService(
+    workflowRunRepository,
+    connectorRegistry,
+    documentService,
+    validationService
+  )
+  workflowExportService = new WorkflowExportService(connectorRegistry)
+  workflowImportService = new WorkflowImportService(connectorRegistry, validationService)
   loggingService = new LoggingService()
   telemetryService = new TelemetryService(configService)
   notificationPrefs = new NotificationPreferenceService(configService)
@@ -137,15 +157,26 @@ app.whenReady().then(async () => {
   schedulerRunner = new SchedulerRunner(
     schedulerService,
     db,
-    workflowRuntime,
+    workflowExecutionService,
+    workflowDraftService,
     loggingService,
     notificationPrefs,
     retentionService
   )
   schedulerRunner.start()
   templateRegistry = new TemplateRegistry(dbPath)
+  workflowTemplateService = new WorkflowTemplateService(app.getAppPath())
 
   createWindow()
+
+  // Subscribe to workflow events and forward to renderer
+  const eventPublisher = getWorkflowEventPublisher()
+  eventPublisher.subscribeAll((event: WorkflowEvent) => {
+    // Send event to all renderer windows
+    BrowserWindow.getAllWindows().forEach((window) => {
+      window.webContents.send('workflow-event', event)
+    })
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -252,6 +283,14 @@ ipcMain.handle('connectors:remove', async (_, id: string) => {
   return { success: true }
 })
 
+ipcMain.handle('connectors:list-models', async (_, connectorId: string) => {
+  return await connectorRegistry.listLLMModels(connectorId)
+})
+
+ipcMain.handle('vault:store-secret', async (_, secret: { key: string; value: string }) => {
+  await credentialVault.storeSecret(secret)
+})
+
 ipcMain.handle('test-results:export', async (_, result: TestRunResult) => {
   const fileName = `test-result-${result.suiteId}-${Date.now()}.json`
   return saveJsonWithDialog(fileName, result, 'Save Test Result')
@@ -315,6 +354,62 @@ ipcMain.handle('workflow-drafts:publish', (_, id: number) => {
     payload: { workflowId: result.workflow.id }
   })
   return result
+})
+
+// Workflow execution handlers
+ipcMain.handle('workflow:execute', async (_, draftId: number, workflowId: number, options?: { workflowVersionId?: number; initialVariables?: Record<string, unknown> }) => {
+  const draft = workflowDraftService.getDraft(draftId)
+  if (!draft) {
+    throw new Error(`Draft ${draftId} not found`)
+  }
+  const runId = await workflowExecutionService.executeWorkflow(draft, workflowId, options || {})
+  return { runId }
+})
+
+ipcMain.handle('workflow:runs:list', (_, workflowId: number) => {
+  return workflowRunRepository.getRunsByWorkflow(workflowId)
+})
+
+ipcMain.handle('workflow:runs:get', (_, runId: number) => {
+  return workflowRunRepository.getRun(runId) ?? null
+})
+
+ipcMain.handle('workflow:runs:events', (_, runId: number) => {
+  return workflowRunRepository.getRunEvents(runId)
+})
+
+ipcMain.handle('workflow:runs:pause', async (_, runId: number) => {
+  await workflowExecutionService.pauseRun(runId)
+  return { success: true }
+})
+
+ipcMain.handle('workflow:runs:resume', async (_, runId: number, draftId: number) => {
+  const draft = workflowDraftService.getDraft(draftId)
+  if (!draft) {
+    throw new Error(`Draft ${draftId} not found`)
+  }
+  await workflowExecutionService.resumeRun(runId, draft)
+  return { success: true }
+})
+
+ipcMain.handle('workflow:export', (_, draftId: number) => {
+  const draft = workflowDraftService.getDraft(draftId)
+  if (!draft) {
+    throw new Error(`Draft ${draftId} not found`)
+  }
+  return workflowExportService.exportWorkflow(draft)
+})
+
+ipcMain.handle('workflow:import', async (_, manifest: any) => {
+  return await workflowImportService.importWorkflow(manifest)
+})
+
+ipcMain.handle('workflow:templates:list', () => {
+  return workflowTemplateService.listTemplates()
+})
+
+ipcMain.handle('workflow:templates:get', (_, name: string) => {
+  return workflowTemplateService.getTemplate(name) ?? null
 })
 
 ipcMain.handle('documents:list', () => documentService.listDocuments())

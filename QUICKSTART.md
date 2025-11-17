@@ -18,6 +18,7 @@ npm run dev
 ```
 
 This command will:
+
 1. Start the Vite dev server on port 5173
 2. Launch the Electron app
 3. Enable hot reload for React components
@@ -26,6 +27,7 @@ This command will:
 ## Step 3: Try the GUI
 
 Once the app opens:
+
 1. Click **"+ New Workflow"** to create a workflow
 2. Fill in the name and description
 3. Click **"Create Workflow"**
@@ -83,6 +85,7 @@ The SQLite database is stored in:
 **Linux**: `~/.local/share/ai-workflow-manager/workflows.db`
 
 To see the exact path:
+
 ```bash
 npm run cli -- db-path
 ```
@@ -90,7 +93,9 @@ npm run cli -- db-path
 ## 🎨 Customization
 
 ### Change App Name
+
 Edit `package.json`:
+
 ```json
 {
   "name": "your-app-name",
@@ -99,18 +104,23 @@ Edit `package.json`:
 ```
 
 ### Add Icons
+
 Place your icons in the `build/` folder:
+
 - `icon.ico` for Windows
 - `icon.icns` for macOS
 - `icon.png` for Linux
 
 ### Modify UI Colors
+
 Edit `src/renderer/App.css` to change the gradient and color scheme.
 
 ## 🐛 Troubleshooting
 
 ### Port 5173 is already in use
+
 Change the port in `vite.config.ts`:
+
 ```typescript
 server: {
   port: 5174,  // Change this
@@ -119,19 +129,33 @@ server: {
 ```
 
 ### better-sqlite3 build errors
-Make sure you have build tools installed:
 
-**Windows**: Install Visual Studio Build Tools  
-**macOS**: Run `xcode-select --install`  
-**Linux**: Install `build-essential`
+The native module `better-sqlite3` is automatically rebuilt when running `npm run dev` or `npm run test`. If you encounter module version errors:
 
-Then run:
+**For Development (Electron)**:
+
 ```bash
-npm rebuild better-sqlite3
+npm run rebuild:sqlite:electron
 ```
 
+**For Tests (Node.js)**:
+
+```bash
+npm run rebuild:sqlite:test
+```
+
+**Build Tools Required**:
+
+- **Windows**: Install Visual Studio Build Tools
+- **macOS**: Run `xcode-select --install`
+- **Linux**: Install `build-essential`
+
+**Note**: The `dev` and `test` scripts automatically rebuild the native module for the correct runtime, so manual rebuilds are rarely needed.
+
 ### Electron not starting
+
 Clear the cache and reinstall:
+
 ```bash
 rm -rf node_modules package-lock.json
 npm install
@@ -155,4 +179,3 @@ npm install
 ---
 
 Happy coding! 🎉
-

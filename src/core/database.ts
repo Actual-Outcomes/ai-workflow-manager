@@ -69,12 +69,48 @@ export class WorkflowDatabase {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS workflow_runs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        workflow_version_id INTEGER,
         workflow_id INTEGER NOT NULL,
         status TEXT DEFAULT 'running',
+        current_node_id TEXT,
+        context_json TEXT,
         started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         completed_at DATETIME,
         error TEXT,
-        FOREIGN KEY (workflow_id) REFERENCES workflows (id) ON DELETE CASCADE
+        FOREIGN KEY (workflow_id) REFERENCES workflows (id) ON DELETE CASCADE,
+        FOREIGN KEY (workflow_version_id) REFERENCES workflow_versions (id) ON DELETE SET NULL
+      )
+    `)
+    
+    // Migration: Add workflow_version_id column if it doesn't exist
+    try {
+      const tableInfo = this.db.prepare("PRAGMA table_info(workflow_runs)").all() as Array<{ name: string }>
+      const hasVersionId = tableInfo.some(col => col.name === 'workflow_version_id')
+      if (!hasVersionId) {
+        this.db.exec(`
+          ALTER TABLE workflow_runs 
+          ADD COLUMN workflow_version_id INTEGER
+        `)
+        this.db.exec(`
+          CREATE INDEX IF NOT EXISTS idx_workflow_runs_version 
+          ON workflow_runs(workflow_version_id)
+        `)
+      }
+    } catch (error) {
+      // Table might not exist yet, which is fine
+      console.warn('Migration check for workflow_version_id failed:', error)
+    }
+
+    // Create workflow_run_events table for execution events
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS workflow_run_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id INTEGER NOT NULL,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        type TEXT NOT NULL,
+        payload_json TEXT,
+        emitter TEXT,
+        FOREIGN KEY (run_id) REFERENCES workflow_runs (id) ON DELETE CASCADE
       )
     `)
   }

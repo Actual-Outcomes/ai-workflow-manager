@@ -7,6 +7,9 @@ import {
   HealthCheckResult,
   ManagedConnectorDefinition
 } from './types'
+import { LLMConnector, LLMModel } from './llm/types'
+import { ClaudeConnector } from './llm/claudeConnector'
+import { ChatgptConnector } from './llm/chatgptConnector'
 
 const REGISTRY_CONFIG_PATH = 'connectors.registry'
 
@@ -19,6 +22,7 @@ interface RegisteredConnector {
 export class ConnectorRegistry {
   private connectors = new Map<string, RegisteredConnector>()
   private managedConnectors = new Set<string>()
+  private llmConnectors = new Map<string, LLMConnector>()
 
   constructor(
     private configService?: ConfigService,
@@ -26,6 +30,60 @@ export class ConnectorRegistry {
   ) {
     if (this.configService) {
       this.bootstrapManagedConnectors()
+    }
+  }
+
+  /**
+   * Get an LLM connector by ID
+   */
+  getLLMConnector(id: string): LLMConnector | undefined {
+    return this.llmConnectors.get(id)
+  }
+
+  /**
+   * List all registered LLM connectors
+   */
+  listLLMConnectors(): string[] {
+    return Array.from(this.llmConnectors.keys())
+  }
+
+  /**
+   * List available models for an LLM connector
+   */
+  async listLLMModels(connectorId: string): Promise<LLMModel[]> {
+    // First, try to get existing connector
+    let connector = this.llmConnectors.get(connectorId)
+    
+    // If connector not initialized, try to initialize it
+    if (!connector) {
+      const record = this.connectors.get(connectorId)
+      if (record && record.adapter.metadata.kind === 'llm' && this.credentialVault && record.adapter.metadata.requiresSecrets?.length) {
+        const secretKey = record.adapter.metadata.requiresSecrets[0]
+        const secret = await this.credentialVault.retrieveSecret(secretKey)
+        if (secret?.value) {
+          const def = this.getManagedConfig()[connectorId]
+          const defaultModel = def ? (def.config as { defaultModel?: string })?.defaultModel : undefined
+          const apiKey = secret.value.trim()
+          // Handle both 'llm.claude' and 'llm.claude:temp' formats
+          if (connectorId === 'llm.claude' || connectorId.startsWith('llm.claude:')) {
+            connector = new ClaudeConnector({ apiKey, defaultModel })
+            this.llmConnectors.set(connectorId, connector)
+          } else if (connectorId === 'llm.chatgpt' || connectorId.startsWith('llm.chatgpt:')) {
+            connector = new ChatgptConnector({ apiKey, defaultModel })
+            this.llmConnectors.set(connectorId, connector)
+          }
+        }
+      }
+    }
+    
+    if (!connector || !connector.listModels) {
+      return []
+    }
+    try {
+      return await connector.listModels()
+    } catch (error) {
+      console.error(`Failed to list models for ${connectorId}:`, error)
+      return []
     }
   }
 
@@ -64,6 +122,71 @@ export class ConnectorRegistry {
       throw new Error(`Connector "${id}" is not registered`)
     }
     record.status = 'initializing'
+    
+    // For LLM connectors, test actual API connectivity
+    if (record.adapter.metadata.kind === 'llm') {
+      // Ensure connector is initialized before testing
+      let llmConnector = this.llmConnectors.get(id)
+      if (!llmConnector && this.credentialVault && record.adapter.metadata.requiresSecrets?.length) {
+        // Initialize connector if not already initialized
+        const secretKey = record.adapter.metadata.requiresSecrets[0]
+        const secret = await this.credentialVault.retrieveSecret(secretKey)
+        if (secret?.value) {
+          const def = this.getManagedConfig()[id]
+          const defaultModel = def ? (def.config as { defaultModel?: string })?.defaultModel : undefined
+          // Handle both 'llm.claude' and 'llm.claude:temp' formats
+          if (id === 'llm.claude' || id.startsWith('llm.claude:')) {
+            llmConnector = new ClaudeConnector({ apiKey: secret.value.trim(), defaultModel })
+            this.llmConnectors.set(id, llmConnector)
+          } else if (id === 'llm.chatgpt' || id.startsWith('llm.chatgpt:')) {
+            llmConnector = new ChatgptConnector({ apiKey: secret.value.trim(), defaultModel })
+            this.llmConnectors.set(id, llmConnector)
+          }
+        }
+      }
+      
+      if (llmConnector) {
+        try {
+          // Test with a simple message
+          await llmConnector.chat([
+            { role: 'user', content: 'Hello' }
+          ], { maxTokens: 10 })
+          const result = { status: 'ok' as const, message: 'API connectivity verified', latencyMs: 0 }
+          record.lastHealthCheck = result
+          record.status = 'ready'
+          return result
+        } catch (error) {
+          let errorMessage = 'API test failed'
+          if (error instanceof Error) {
+            // Provide more helpful error messages
+            if (error.message.includes('not_found_error') || error.message.includes('404')) {
+              errorMessage = `Model not found. The selected model may not be available in your account. Please check your connector configuration and try a different model.`
+            } else if (error.message.includes('authentication_error') || error.message.includes('401')) {
+              errorMessage = `Authentication failed. Please verify your API key is correct.`
+            } else {
+              errorMessage = error.message
+            }
+          }
+          const result = {
+            status: 'error' as const,
+            message: errorMessage
+          }
+          record.lastHealthCheck = result
+          record.status = 'error'
+          return result
+        }
+      } else {
+        // Connector not initialized - likely missing API key
+        const result = {
+          status: 'error' as const,
+          message: 'API key not found or connector not initialized'
+        }
+        record.lastHealthCheck = result
+        record.status = 'error'
+        return result
+      }
+    }
+    
     const result = await record.adapter.testConnectivity()
     record.lastHealthCheck = result
     record.status = result.status === 'error' ? 'error' : 'ready'
@@ -122,6 +245,11 @@ export class ConnectorRegistry {
       capabilities: def.capabilities ?? [],
       requiresSecrets: def.requiresSecrets
     }
+    
+    // For LLM connectors, we'll initialize them lazily when needed
+    // (in listLLMModels, testConnector, or testConnectivity)
+    // This avoids async initialization issues during adapter creation
+    
     return {
       metadata,
       testConnectivity: async () => {
@@ -139,6 +267,19 @@ export class ConnectorRegistry {
           const secret = await this.credentialVault.retrieveSecret(key)
           if (!secret?.value) {
             missing.push(key)
+          } else if (def.kind === 'llm') {
+            // Initialize LLM connector if not already initialized
+            if (!this.llmConnectors.has(def.id)) {
+              const defaultModel = (def.config as { defaultModel?: string })?.defaultModel
+              // Trim API key to remove any whitespace
+              const apiKey = secret.value.trim()
+              // Handle both 'llm.claude' and 'llm.claude:temp' formats
+              if (def.id === 'llm.claude' || def.id.startsWith('llm.claude:')) {
+                this.llmConnectors.set(def.id, new ClaudeConnector({ apiKey, defaultModel }))
+              } else if (def.id === 'llm.chatgpt' || def.id.startsWith('llm.chatgpt:')) {
+                this.llmConnectors.set(def.id, new ChatgptConnector({ apiKey, defaultModel }))
+              }
+            }
           }
         }
         if (missing.length) {

@@ -54,6 +54,9 @@ interface WorkflowDraftRecord {
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import './App.css'
 import { ListedTestSuite, TestRunBundle, TestRunResult } from '../shared/testRunnerTypes'
+import { WorkflowDesigner } from './components/WorkflowDesigner'
+import { ConfirmationModal } from './components/ConfirmationModal'
+import { WorkflowExecutionView } from './components/WorkflowExecutionView'
 
 interface Workflow {
   id: number
@@ -64,7 +67,7 @@ interface Workflow {
   updated_at: string
 }
 
-type TabId = 'workflows' | 'tests' | 'diagnostics'
+type TabId = 'workflows' | 'tests' | 'diagnostics' | 'settings'
 
 function App() {
   const [workflows, setWorkflows] = useState<Workflow[]>([])
@@ -84,21 +87,32 @@ function App() {
   const [connectorLoading, setConnectorLoading] = useState(false)
   const [connectorError, setConnectorError] = useState<string | null>(null)
   const [showConnectorForm, setShowConnectorForm] = useState(false)
-  const [connectorForm, setConnectorForm] = useState({
-    id: '',
-    name: '',
-    kind: 'integration',
-    version: '1.0.0',
-    description: '',
-    capabilities: '',
-    requiresSecrets: ''
-  })
+  const [selectedConnectorType, setSelectedConnectorType] = useState<'claude' | 'chatgpt' | null>(null)
+  const [connectorApiKey, setConnectorApiKey] = useState('')
+  const [connectorSelectedModel, setConnectorSelectedModel] = useState<string>('')
+  const [connectorCustomModel, setConnectorCustomModel] = useState<string>('')
+  const [connectorAvailableModels, setConnectorAvailableModels] = useState<any[]>([])
+  const [connectorLoadingModels, setConnectorLoadingModels] = useState(false)
   const [connectorSubmitting, setConnectorSubmitting] = useState(false)
   const [documents, setDocuments] = useState<DocumentRecord[]>([])
   const [documentsLoading, setDocumentsLoading] = useState(false)
   const [drafts, setDrafts] = useState<WorkflowDraftRecord[]>([])
   const [draftsLoading, setDraftsLoading] = useState(false)
   const [draftActionId, setDraftActionId] = useState<number | null>(null)
+  const [designingDraftId, setDesigningDraftId] = useState<number | null>(null)
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [currentDraft, setCurrentDraft] = useState<WorkflowDraftRecord | null>(null)
+  const [showCreateDraftForm, setShowCreateDraftForm] = useState(false)
+  const [showTemplateSelection, setShowTemplateSelection] = useState(false)
+  const [workflowTemplates, setWorkflowTemplates] = useState<any[]>([])
+  const [newDraftName, setNewDraftName] = useState('')
+  const [newDraftDescription, setNewDraftDescription] = useState('')
+  const [creatingDraft, setCreatingDraft] = useState(false)
+  const [executingWorkflowId, setExecutingWorkflowId] = useState<number | null>(null)
+  const [workflowRuns, setWorkflowRuns] = useState<Record<number, any[]>>({})
+  const [selectedRunId, setSelectedRunId] = useState<number | null>(null)
+  const [runEvents, setRunEvents] = useState<any[]>([])
+  const [viewingExecution, setViewingExecution] = useState<{ runId: number; workflowId: number; draftId: number } | null>(null)
   const [documentForm, setDocumentForm] = useState({
     name: '',
     format: 'markdown' as DocumentRecord['type'],
@@ -117,6 +131,21 @@ function App() {
   const [notificationSaving, setNotificationSaving] = useState(false)
   const [schedules, setSchedules] = useState<ScheduleRecord[]>([])
   const [schedulesLoading, setSchedulesLoading] = useState(false)
+  const [showScheduleForm, setShowScheduleForm] = useState(false)
+  const [editingScheduleId, setEditingScheduleId] = useState<number | null>(null)
+  const [scheduleForm, setScheduleForm] = useState({
+    workflowId: '',
+    cron: '',
+    timezone: 'UTC',
+    cronPattern: 'custom' as 'custom' | 'daily' | 'weekly' | 'monthly' | 'hourly',
+    dailyTime: '09:00',
+    weeklyDay: 'monday',
+    weeklyTime: '09:00',
+    monthlyDay: '1',
+    monthlyTime: '09:00',
+    hourlyMinute: '0'
+  })
+  const [scheduleSubmitting, setScheduleSubmitting] = useState(false)
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false)
 
   const loadTestSuites = useCallback(async () => {
@@ -153,6 +182,15 @@ function App() {
       console.error('Failed to load drafts:', error)
     } finally {
       setDraftsLoading(false)
+    }
+  }, [])
+
+  const loadTemplates = useCallback(async () => {
+    try {
+      const templates = await window.electronAPI.listWorkflowTemplates()
+      setWorkflowTemplates(templates)
+    } catch (error) {
+      console.error('Failed to load templates:', error)
     }
   }, [])
 
@@ -203,7 +241,15 @@ function App() {
     loadDocuments()
     loadDrafts()
     loadDiagnostics()
-  }, [loadTestSuites, loadDocuments, loadDrafts, loadDiagnostics])
+    loadTemplates()
+  }, [loadTestSuites, loadDocuments, loadDrafts, loadDiagnostics, loadTemplates])
+
+  // Load runs when workflows change
+  useEffect(() => {
+    workflows.forEach((w) => {
+      loadWorkflowRuns(w.id)
+    })
+  }, [workflows.map((w) => w.id).join(',')])
 
   useEffect(() => {
     if (!selectedSuiteId && testSuites.length > 0) {
@@ -264,6 +310,129 @@ function App() {
     }
   }
 
+  const handleExportWorkflow = async (workflowId: number) => {
+    try {
+      // Find draft for this workflow
+      const draftsList = await window.electronAPI.listWorkflowDrafts()
+      const workflow = workflows.find((w) => w.id === workflowId)
+      const draft = draftsList.find((d) => d.name === workflow?.name)
+      
+      if (!draft) {
+        alert('No draft found for this workflow. Please create and publish a draft first.')
+        return
+      }
+
+      const manifest = await window.electronAPI.exportWorkflow(draft.id)
+      
+      // Create download
+      const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${workflow?.name || 'workflow'}-${Date.now()}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      
+      alert('Workflow exported successfully!')
+    } catch (error) {
+      console.error('Failed to export workflow:', error)
+      alert(error instanceof Error ? error.message : 'Failed to export workflow')
+    }
+  }
+
+  const handleImportWorkflow = async () => {
+    try {
+      // Create file input
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = '.json'
+      input.onchange = async (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0]
+        if (!file) return
+
+        try {
+          const text = await file.text()
+          const manifest = JSON.parse(text)
+          
+          const result = await window.electronAPI.importWorkflow(manifest)
+          
+          if (!result.success) {
+            alert(`Import failed:\n${result.errors.join('\n')}\n\nWarnings:\n${result.warnings.join('\n')}`)
+            return
+          }
+
+          if (result.warnings.length > 0) {
+            const proceed = confirm(`Import warnings:\n${result.warnings.join('\n')}\n\nContinue?`)
+            if (!proceed) return
+          }
+
+          // Create draft from imported workflow
+          if (result.draft) {
+            const draft = await window.electronAPI.createWorkflowDraft({
+              name: result.draft.name,
+              description: result.draft.description
+            })
+            await window.electronAPI.autosaveWorkflowDraft(draft.id, {
+              nodes: result.draft.nodes,
+              transitions: result.draft.transitions
+            })
+            await loadDrafts()
+            alert('Workflow imported successfully! Check the Drafts section.')
+          }
+        } catch (error) {
+          console.error('Failed to import workflow:', error)
+          alert(error instanceof Error ? error.message : 'Failed to import workflow')
+        }
+      }
+      input.click()
+    } catch (error) {
+      console.error('Failed to import workflow:', error)
+      alert(error instanceof Error ? error.message : 'Failed to import workflow')
+    }
+  }
+
+  const handleExecuteWorkflow = async (workflowId: number) => {
+    try {
+      setExecutingWorkflowId(workflowId)
+      // Find draft for this workflow (for now, use first draft - in production, link workflows to drafts)
+      const draftsList = await window.electronAPI.listWorkflowDrafts()
+      const draft = draftsList.find((d) => d.name === workflows.find((w) => w.id === workflowId)?.name)
+      if (!draft) {
+        alert('No draft found for this workflow. Please create and publish a draft first.')
+        return
+      }
+      const result = await window.electronAPI.executeWorkflow(draft.id, workflowId)
+      await loadWorkflowRuns(workflowId)
+      // Open execution view
+      setViewingExecution({ runId: result.runId, workflowId, draftId: draft.id })
+    } catch (error) {
+      console.error('Failed to execute workflow:', error)
+      alert(error instanceof Error ? error.message : 'Failed to execute workflow')
+    } finally {
+      setExecutingWorkflowId(null)
+    }
+  }
+
+  const loadWorkflowRuns = async (workflowId: number) => {
+    try {
+      const runs = await window.electronAPI.listWorkflowRuns(workflowId)
+      setWorkflowRuns((prev) => ({ ...prev, [workflowId]: runs }))
+    } catch (error) {
+      console.error('Failed to load workflow runs:', error)
+    }
+  }
+
+  const loadRunEvents = async (runId: number) => {
+    try {
+      const events = await window.electronAPI.getWorkflowRunEvents(runId)
+      setRunEvents(events)
+    } catch (error) {
+      console.error('Failed to load run events:', error)
+    }
+  }
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'active':
@@ -308,63 +477,197 @@ function App() {
   }
 
   const resetConnectorForm = () => {
-    setConnectorForm({
-      id: '',
-      name: '',
-      kind: 'integration',
-      version: '1.0.0',
-      description: '',
-      capabilities: '',
-      requiresSecrets: ''
-    })
+    setSelectedConnectorType(null)
+    setConnectorApiKey('')
+    setConnectorSelectedModel('')
+    setConnectorCustomModel('')
+    setConnectorAvailableModels([])
   }
 
-  const handleConnectorFormChange = (field: keyof typeof connectorForm, value: string) => {
-    setConnectorForm((prev) => ({ ...prev, [field]: value }))
+  const loadConnectorModels = async (connectorType: 'claude' | 'chatgpt', apiKey: string) => {
+    if (!apiKey.trim()) {
+      setConnectorAvailableModels([])
+      return
+    }
+    
+    try {
+      setConnectorLoadingModels(true)
+      // Temporarily create connector to list models
+      const connectorId = connectorType === 'claude' ? 'llm.claude' : 'llm.chatgpt'
+      
+      // We need to register temporarily to get models, or call API directly
+      // For now, let's use a workaround - register temporarily
+      const tempSecretKey = connectorType === 'claude' ? 'connector:llm:claude:temp' : 'connector:llm:openai:temp'
+      await window.electronAPI.storeSecret({ key: tempSecretKey, value: apiKey.trim() })
+      
+      // Create a temporary connector to fetch models
+      // We need to register it, wait a bit for initialization, then list models
+      const tempConnectorDef = {
+        id: connectorId + ':temp',
+        name: connectorType === 'claude' ? 'Claude (Temp)' : 'ChatGPT (Temp)',
+        kind: 'llm' as const,
+        version: '1.0.0',
+        description: 'Temporary connector for model listing',
+        capabilities: [],
+        requiresSecrets: [tempSecretKey],
+        config: {} // No default model needed for temp connector
+      }
+      
+      try {
+        // Register the temp connector
+        await window.electronAPI.registerConnector(tempConnectorDef)
+        
+        // Give it a moment for async initialization to complete
+        await new Promise(resolve => setTimeout(resolve, 100))
+        
+        // Now try to list models
+        const models = await window.electronAPI.listConnectorModels(connectorId + ':temp')
+        
+        if (models.length > 0) {
+          setConnectorAvailableModels(models)
+          if (!connectorSelectedModel) {
+            setConnectorSelectedModel(models[0].id)
+          }
+        } else {
+          // If no models returned, use fallback
+          throw new Error('No models returned from API')
+        }
+        
+        // Clean up temp connector
+        await window.electronAPI.removeConnector(connectorId + ':temp')
+        await window.electronAPI.storeSecret({ key: tempSecretKey, value: '' })
+      } catch (error) {
+        console.warn('Failed to fetch models from API, using fallback:', error)
+        // If registration fails, use fallback models
+        const fallbackModels = connectorType === 'claude'
+          ? [
+              { id: 'claude-sonnet-4-5-20250929', displayName: 'Claude Sonnet 4.5 (2025-09-29) - Latest' },
+              { id: 'claude-3-5-sonnet-20241022', displayName: 'Claude 3.5 Sonnet (2024-10-22)' },
+              { id: 'claude-3-5-haiku-20241022', displayName: 'Claude 3.5 Haiku (2024-10-22)' },
+              { id: 'claude-3-opus-20240229', displayName: 'Claude 3 Opus (2024-02-29)' }
+            ]
+          : [
+              { id: 'gpt-4-turbo-preview', displayName: 'GPT-4 Turbo' },
+              { id: 'gpt-4', displayName: 'GPT-4' },
+              { id: 'gpt-3.5-turbo', displayName: 'GPT-3.5 Turbo' }
+            ]
+        setConnectorAvailableModels(fallbackModels)
+        if (!connectorSelectedModel && fallbackModels.length > 0) {
+          setConnectorSelectedModel(fallbackModels[0].id)
+        }
+        
+        // Still try to clean up temp connector if it was created
+        try {
+          await window.electronAPI.removeConnector(connectorId + ':temp')
+          await window.electronAPI.storeSecret({ key: tempSecretKey, value: '' })
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load models:', error)
+      setConnectorAvailableModels([])
+    } finally {
+      setConnectorLoadingModels(false)
+    }
+  }
+
+  const validateApiKey = (apiKey: string, type: 'claude' | 'chatgpt'): { valid: boolean; error?: string } => {
+    const trimmed = apiKey.trim()
+    
+    if (!trimmed) {
+      return { valid: false, error: 'API key cannot be empty' }
+    }
+    
+    if (type === 'claude') {
+      // Claude API keys start with "sk-ant-" and are typically 48+ characters
+      if (!trimmed.startsWith('sk-ant-')) {
+        return { valid: false, error: 'Claude API key must start with "sk-ant-"' }
+      }
+      if (trimmed.length < 48) {
+        return { valid: false, error: 'Claude API key appears to be too short (minimum 48 characters)' }
+      }
+      if (trimmed.length > 200) {
+        return { valid: false, error: 'Claude API key appears to be too long (maximum 200 characters)' }
+      }
+    } else if (type === 'chatgpt') {
+      // ChatGPT API keys start with "sk-" and are typically 48+ characters
+      if (!trimmed.startsWith('sk-')) {
+        return { valid: false, error: 'ChatGPT API key must start with "sk-"' }
+      }
+      if (trimmed.length < 48) {
+        return { valid: false, error: 'ChatGPT API key appears to be too short (minimum 48 characters)' }
+      }
+      if (trimmed.length > 200) {
+        return { valid: false, error: 'ChatGPT API key appears to be too long (maximum 200 characters)' }
+      }
+    }
+    
+    return { valid: true }
   }
 
   const handleRegisterConnector = async (event: React.FormEvent) => {
     event.preventDefault()
-    if (!connectorForm.id.trim() || !connectorForm.name.trim()) {
-      alert('Connector ID and name are required.')
+    if (!selectedConnectorType || !connectorApiKey.trim()) {
+      setConnectorError('Please select a connector type and provide an API key.')
       return
     }
+    
+    // Validate API key format
+    const validation = validateApiKey(connectorApiKey, selectedConnectorType)
+    if (!validation.valid) {
+      setConnectorError(validation.error || 'Invalid API key format')
+      return
+    }
+    
     try {
       setConnectorSubmitting(true)
-      const capabilities = connectorForm.capabilities
-        .split(',')
-        .map((entry) => entry.trim())
-        .filter(Boolean)
-        .map((entry) => {
-          const [name, desc] = entry.split(':')
-          return { name: name.trim(), description: desc ? desc.trim() : undefined }
-        })
-      const requiresSecrets = connectorForm.requiresSecrets
-        .split(',')
-        .map((secret) => secret.trim())
-        .filter(Boolean)
-      await window.electronAPI.registerConnector({
-        id: connectorForm.id,
-        name: connectorForm.name,
-        kind: connectorForm.kind as ConnectorSummary['kind'],
-        version: connectorForm.version,
-        description: connectorForm.description,
-        capabilities,
-        requiresSecrets
-      })
+      setConnectorError(null)
+      
+      // Store the API key in the credential vault first
+      const secretKey = selectedConnectorType === 'claude' 
+        ? 'connector:llm:claude' 
+        : 'connector:llm:openai'
+      // Store API key, ensuring it's trimmed
+      const trimmedApiKey = connectorApiKey.trim()
+      await window.electronAPI.storeSecret({ key: secretKey, value: trimmedApiKey })
+      
+      // Register the connector with predefined metadata and selected model
+      const connectorDef = selectedConnectorType === 'claude'
+        ? {
+            id: 'llm.claude',
+            name: 'Claude (Anthropic)',
+            kind: 'llm' as const,
+            version: '1.0.0',
+            description: 'Anthropic Claude AI assistant',
+            capabilities: [{ name: 'chat', description: 'Chat completion' }, { name: 'text', description: 'Text generation' }],
+            requiresSecrets: [secretKey],
+            config: { defaultModel: connectorSelectedModel === '__custom__' ? connectorCustomModel : (connectorSelectedModel || 'claude-sonnet-4-5-20250929') }
+          }
+        : {
+            id: 'llm.chatgpt',
+            name: 'ChatGPT (OpenAI)',
+            kind: 'llm' as const,
+            version: '1.0.0',
+            description: 'OpenAI ChatGPT AI assistant',
+            capabilities: [{ name: 'chat', description: 'Chat completion' }, { name: 'text', description: 'Text generation' }],
+            requiresSecrets: [secretKey],
+            config: { defaultModel: connectorSelectedModel || 'gpt-4-turbo-preview' }
+          }
+      
+      await window.electronAPI.registerConnector(connectorDef)
       await loadConnectors()
       resetConnectorForm()
       setShowConnectorForm(false)
     } catch (error) {
       console.error('Failed to register connector:', error)
-      alert('Failed to register connector.')
+      setConnectorError(error instanceof Error ? error.message : 'Failed to register connector.')
     } finally {
       setConnectorSubmitting(false)
     }
   }
 
   const handleRemoveConnector = async (id: string) => {
-    if (!confirm(`Remove connector "${id}"?`)) return
     try {
       await window.electronAPI.removeConnector(id)
       await loadConnectors()
@@ -505,6 +808,43 @@ function App() {
     }
   }
 
+  const handleSaveDesigner = async (nodes: any[], transitions: any[]) => {
+    if (!designingDraftId) return
+    
+    try {
+      console.log('Saving draft:', { draftId: designingDraftId, nodes, transitions })
+      await window.electronAPI.autosaveWorkflowDraft(designingDraftId, {
+        nodes: nodes as any,
+        transitions: transitions as any
+      })
+      // Update current draft without reloading all drafts (faster)
+      const updated = await window.electronAPI.getWorkflowDraft(designingDraftId)
+      if (updated) {
+        console.log('Draft updated:', updated)
+        setCurrentDraft(updated as any)
+      }
+    } catch (error) {
+      console.error('Failed to save workflow:', error)
+      alert('Failed to save workflow changes.')
+    }
+  }
+
+  // Load draft when opening designer - always reload when draft ID changes
+  useEffect(() => {
+    if (designingDraftId) {
+      window.electronAPI.getWorkflowDraft(designingDraftId).then((draft) => {
+        if (draft) {
+          setCurrentDraft(draft as any)
+        }
+      }).catch((error) => {
+        console.error('Failed to load draft:', error)
+      })
+    } else {
+      // Clear draft when closing designer
+      setCurrentDraft(null)
+    }
+  }, [designingDraftId])
+
   const handleExportDocument = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!documentForm.name.trim() || !documentForm.content.trim()) {
@@ -634,6 +974,33 @@ function App() {
     }
   }
 
+  const handleCopyResult = async () => {
+    if (!currentResult) return
+    try {
+      const resultText = [
+        `Test Suite: ${currentSuite?.name || currentResult.suiteId}`,
+        `Status: ${currentResult.status.toUpperCase()}`,
+        `Started: ${formatTimestamp(currentResult.startedAt)}`,
+        `Finished: ${formatTimestamp(currentResult.finishedAt)}`,
+        `Duration: ${formatDuration(currentResult.durationMs)}`,
+        currentResult.exitCode !== null ? `Exit Code: ${currentResult.exitCode}` : '',
+        currentResult.errorMessage ? `Error: ${currentResult.errorMessage}` : '',
+        '',
+        'Logs:',
+        '---',
+        ...currentResult.logs
+      ]
+        .filter((line) => line !== '')
+        .join('\n')
+
+      await navigator.clipboard.writeText(resultText)
+      alert('✅ Test result copied to clipboard!')
+    } catch (error) {
+      console.error('Failed to copy test result:', error)
+      alert('Failed to copy test result. Check logs for details.')
+    }
+  }
+
   const handleExportAllResults = async () => {
     const bundle = buildTestRunBundle()
     if (!bundle) {
@@ -665,8 +1032,17 @@ function App() {
       </header>
 
       <main className="main">
-        <div className="toolbar">
-          <div className="tab-switcher">
+            <div className="toolbar">
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  className="btn-secondary"
+                  onClick={handleImportWorkflow}
+                  title="Import workflow from JSON file"
+                >
+                  Import Workflow
+                </button>
+              </div>
+              <div className="tab-switcher">
             <button
               className={`tab-button ${activeTab === 'workflows' ? 'active' : ''}`}
               type="button"
@@ -696,6 +1072,18 @@ function App() {
             >
               Diagnostics
             </button>
+            <button
+              className={`tab-button ${activeTab === 'settings' ? 'active' : ''}`}
+              type="button"
+              onClick={() => {
+                setActiveTab('settings')
+                loadDiagnostics()
+                loadConnectors()
+                loadDocuments()
+              }}
+            >
+              Settings
+            </button>
           </div>
           {activeTab === 'workflows' && (
             <button
@@ -716,20 +1104,29 @@ function App() {
                   <h3>Workflow Drafts</h3>
                   <p>Validate and publish drafts before activating workflows.</p>
                 </div>
-                <button
-                  className="btn-secondary"
-                  type="button"
-                  onClick={loadDrafts}
-                  disabled={draftsLoading}
-                >
-                  {draftsLoading ? 'Refreshing…' : 'Refresh'}
-                </button>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    className="btn-primary"
+                    type="button"
+                    onClick={() => setShowCreateDraftForm(true)}
+                  >
+                    + Create Draft
+                  </button>
+                  <button
+                    className="btn-secondary"
+                    type="button"
+                    onClick={loadDrafts}
+                    disabled={draftsLoading}
+                  >
+                    {draftsLoading ? 'Refreshing…' : 'Refresh'}
+                  </button>
+                </div>
               </div>
               {draftsLoading ? (
                 <div className="loading small">Loading drafts…</div>
               ) : drafts.length === 0 ? (
                 <div className="empty-state compact">
-                  <p>No drafts yet. Use the CLI or API to create workflow drafts.</p>
+                  <p>No drafts yet. Click "+ Create Draft" above to create your first workflow draft.</p>
                 </div>
               ) : (
                 <div className="draft-grid">
@@ -747,6 +1144,16 @@ function App() {
                         </span>
                       </div>
                       <div className="draft-actions">
+                        <button
+                          className="btn-primary"
+                          type="button"
+                          onClick={() => {
+                            setDesigningDraftId(draft.id)
+                            setCurrentDraft(draft)
+                          }}
+                        >
+                          Open Designer
+                        </button>
                         <button
                           className="btn-secondary"
                           type="button"
@@ -777,6 +1184,210 @@ function App() {
                 </div>
               )}
             </section>
+
+            {showCreateDraftForm && (
+              <div className="create-form" style={{ marginTop: '20px' }}>
+                <h2>Create New Workflow Draft</h2>
+                <form onSubmit={async (e) => {
+                  e.preventDefault()
+                  if (!newDraftName.trim()) {
+                    alert('Please enter a draft name')
+                    return
+                  }
+                  try {
+                    setCreatingDraft(true)
+                    const draft = await window.electronAPI.createWorkflowDraft({ 
+                      name: newDraftName.trim(),
+                      description: newDraftDescription.trim() || undefined
+                    })
+                    setShowCreateDraftForm(false)
+                    setNewDraftName('')
+                    setNewDraftDescription('')
+                    await loadDrafts()
+                    // Auto-open designer for new draft
+                    setDesigningDraftId(draft.id)
+                    setCurrentDraft(draft as any)
+                  } catch (error) {
+                    console.error('Failed to create draft:', error)
+                    alert('Failed to create draft.')
+                  } finally {
+                    setCreatingDraft(false)
+                  }
+                }}>
+                  <div className="form-group">
+                    <label htmlFor="draft-name">Name *</label>
+                    <input
+                      type="text"
+                      id="draft-name"
+                      value={newDraftName}
+                      onChange={(e) => setNewDraftName(e.target.value)}
+                      placeholder="Enter draft name"
+                      required
+                      autoFocus
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="draft-description">Description</label>
+                    <textarea
+                      id="draft-description"
+                      value={newDraftDescription}
+                      onChange={(e) => setNewDraftDescription(e.target.value)}
+                      placeholder="Enter draft description (optional)"
+                      rows={3}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button type="submit" className="btn-primary" disabled={creatingDraft}>
+                      {creatingDraft ? 'Creating...' : 'Create Draft'}
+                    </button>
+                    <button 
+                      type="button" 
+                      className="btn-secondary"
+                      onClick={() => {
+                        setShowCreateDraftForm(false)
+                        setNewDraftName('')
+                        setNewDraftDescription('')
+                      }}
+                      disabled={creatingDraft}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {showTemplateSelection && (
+              <div style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                zIndex: 1000,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '20px'
+              }}>
+                <div style={{
+                  backgroundColor: '#1e1e1e',
+                  borderRadius: '8px',
+                  padding: '30px',
+                  maxWidth: '600px',
+                  width: '100%',
+                  maxHeight: '80vh',
+                  overflowY: 'auto'
+                }}>
+                  <h2 style={{ color: '#fff', marginTop: 0 }}>Select a Template</h2>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '20px' }}>
+                    {workflowTemplates.map((template) => (
+                      <div
+                        key={template.name}
+                        onClick={async () => {
+                          try {
+                            setCreatingDraft(true)
+                            const draft = await window.electronAPI.createWorkflowDraft({
+                              name: template.name,
+                              description: template.description
+                            })
+                            await window.electronAPI.autosaveWorkflowDraft(draft.id, {
+                              nodes: template.nodes,
+                              transitions: template.transitions
+                            })
+                            setShowTemplateSelection(false)
+                            await loadDrafts()
+                            setDesigningDraftId(draft.id)
+                            setCurrentDraft(draft as any)
+                          } catch (error) {
+                            console.error('Failed to create draft from template:', error)
+                            alert('Failed to create draft from template.')
+                          } finally {
+                            setCreatingDraft(false)
+                          }
+                        }}
+                        style={{
+                          padding: '15px',
+                          backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          border: '1px solid rgba(255, 255, 255, 0.1)',
+                          transition: 'background-color 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'
+                        }}
+                      >
+                        <h3 style={{ color: '#fff', margin: '0 0 5px 0' }}>{template.name}</h3>
+                        <p style={{ color: '#aaa', margin: 0, fontSize: '14px' }}>{template.description}</p>
+                        <span style={{ color: '#666', fontSize: '12px', marginTop: '5px', display: 'block' }}>
+                          Category: {template.category}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => setShowTemplateSelection(false)}
+                    className="btn-secondary"
+                    style={{ marginTop: '20px', width: '100%' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {designingDraftId && currentDraft && (
+              <div style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: '#0a0a0a',
+                zIndex: 1000,
+                display: 'flex',
+                flexDirection: 'column'
+              }}>
+                <div style={{
+                  padding: '15px 20px',
+                  background: '#1a1a1a',
+                  borderBottom: '1px solid #333',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '15px'
+                }}>
+                  <h2 style={{ margin: 0, flex: 1, color: '#fff' }}>Designing: {currentDraft.name}</h2>
+                  <button
+                    className="btn-secondary"
+                    type="button"
+                    onClick={() => {
+                      setDesigningDraftId(null)
+                      setCurrentDraft(null)
+                      setSelectedNodeId(null)
+                    }}
+                  >
+                    Close Designer
+                  </button>
+                </div>
+                <div style={{ flex: 1, position: 'relative' }}>
+                  {currentDraft && (
+                    <WorkflowDesigner
+                      draftId={designingDraftId}
+                      nodes={Array.isArray(currentDraft.nodes) ? (currentDraft.nodes as any) : []}
+                      transitions={Array.isArray(currentDraft.transitions) ? (currentDraft.transitions as any) : []}
+                      onSave={handleSaveDesigner}
+                      onNodeSelect={setSelectedNodeId}
+                      selectedNodeId={selectedNodeId}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
 
             {showCreateForm && (
               <div className="create-form">
@@ -838,7 +1449,14 @@ function App() {
                       <div className="workflow-meta">
                         <small>Created: {new Date(workflow.created_at).toLocaleDateString()}</small>
                       </div>
-                      <div className="workflow-actions">
+                      <div className="workflow-actions" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '1rem' }}>
+                        <button
+                          className="btn-primary"
+                          onClick={() => handleExecuteWorkflow(workflow.id)}
+                          disabled={executingWorkflowId === workflow.id}
+                        >
+                          {executingWorkflowId === workflow.id ? 'Starting…' : 'Run'}
+                        </button>
                         <select
                           value={workflow.status}
                           onChange={(e) => handleStatusChange(workflow.id, e.target.value)}
@@ -850,12 +1468,27 @@ function App() {
                           <option value="completed">Completed</option>
                         </select>
                         <button
+                          className="btn-secondary"
+                          onClick={() => handleExportWorkflow(workflow.id)}
+                          title="Export workflow"
+                        >
+                          Export
+                        </button>
+                        <button
                           className="btn-danger"
                           onClick={() => handleDeleteWorkflow(workflow.id)}
                         >
                           Delete
                         </button>
                       </div>
+                      {workflowRuns[workflow.id] && workflowRuns[workflow.id].length > 0 && (
+                        <div style={{ marginTop: '0.5rem', fontSize: '0.875rem', color: '#888' }}>
+                          <strong>Runs:</strong> {workflowRuns[workflow.id].length}
+                          {workflowRuns[workflow.id].some((r) => r.status === 'running') && (
+                            <span style={{ color: '#10b981', marginLeft: '0.5rem' }}>● Running</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -882,80 +1515,161 @@ function App() {
                 </button>
               </div>
               {showConnectorForm && (
-                <div classnamed="connector-form-card">
+                <div className="connector-form-card">
                   <form className="notification-form" onSubmit={handleRegisterConnector}>
-                    <div className="form-group">
-                      <label htmlFor="connector-id">ID</label>
-                      <input
-                        id="connector-id"
-                        value={connectorForm.id}
-                        onChange={(e) => handleConnectorFormChange('id', e.target.value)}
-                        placeholder="storage.local"
-                        required
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label htmlFor="connector-name">Name</label>
-                      <input
-                        id="connector-name"
-                        value={connectorForm.name}
-                        onChange={(e) => handleConnectorFormChange('name', e.target.value)}
-                        placeholder="Local Storage"
-                        required
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label htmlFor="connector-kind">Kind</label>
-                      <select
-                        id="connector-kind"
-                        value={connectorForm.kind}
-                        onChange={(e) => handleConnectorFormChange('kind', e.target.value)}
-                      >
-                        <option value="integration">Integration</option>
-                        <option value="storage">Storage</option>
-                        <option value="document">Document</option>
-                        <option value="llm">LLM</option>
-                      </select>
-                    </div>
-                    <div className="form-group">
-                      <label htmlFor="connector-version">Version</label>
-                      <input
-                        id="connector-version"
-                        value={connectorForm.version}
-                        onChange={(e) => handleConnectorFormChange('version', e.target.value)}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label htmlFor="connector-description">Description</label>
-                      <input
-                        id="connector-description"
-                        value={connectorForm.description}
-                        onChange={(e) => handleConnectorFormChange('description', e.target.value)}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label htmlFor="connector-capabilities">Capabilities (csv, name:desc)</label>
-                      <input
-                        id="connector-capabilities"
-                        value={connectorForm.capabilities}
-                        onChange={(e) => handleConnectorFormChange('capabilities', e.target.value)}
-                        placeholder="read storage:Provides access"
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label htmlFor="connector-secrets">Requires Secrets (csv)</label>
-                      <input
-                        id="connector-secrets"
-                        value={connectorForm.requiresSecrets}
-                        onChange={(e) =>
-                          handleConnectorFormChange('requiresSecrets', e.target.value)
+                    {!selectedConnectorType ? (
+                      <>
+                        <h4 style={{ marginBottom: '1rem', color: '#fff' }}>Select Connector Type</h4>
+                        <div style={{ display: 'flex', gap: '1rem', flexDirection: 'column' }}>
+                          <button
+                            type="button"
+                            className="btn-primary"
+                            onClick={() => setSelectedConnectorType('claude')}
+                            style={{ width: '100%', padding: '1rem' }}
+                          >
+                            Claude (Anthropic)
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-primary"
+                            onClick={() => setSelectedConnectorType('chatgpt')}
+                            style={{ width: '100%', padding: '1rem' }}
+                          >
+                            ChatGPT (OpenAI)
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={() => setSelectedConnectorType(null)}
+                            style={{ padding: '0.5rem 1rem' }}
+                          >
+                            ← Back
+                          </button>
+                          <h4 style={{ color: '#fff', margin: 0 }}>
+                            {selectedConnectorType === 'claude' ? 'Claude (Anthropic)' : 'ChatGPT (OpenAI)'}
+                          </h4>
+                        </div>
+                        <div className="form-group">
+                          <label htmlFor="connector-api-key">
+                            API Key
+                            {selectedConnectorType === 'claude' && (
+                              <small style={{ display: 'block', color: '#888', marginTop: '0.25rem' }}>
+                                Get your API key from{' '}
+                                <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer" style={{ color: '#667eea' }}>
+                                  Anthropic Console
+                                </a>
+                              </small>
+                            )}
+                            {selectedConnectorType === 'chatgpt' && (
+                              <small style={{ display: 'block', color: '#888', marginTop: '0.25rem' }}>
+                                Get your API key from{' '}
+                                <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" style={{ color: '#667eea' }}>
+                                  OpenAI Platform
+                                </a>
+                              </small>
+                            )}
+                          </label>
+                  <input
+                    id="connector-api-key"
+                    type="password"
+                    value={connectorApiKey}
+                    onChange={(e) => {
+                      const newValue = e.target.value
+                      setConnectorApiKey(newValue)
+                      
+                      // Clear previous errors when user types
+                      if (connectorError) {
+                        setConnectorError(null)
+                      }
+                      
+                      // Validate format as user types (but don't block)
+                      if (newValue.trim().length > 0) {
+                        const validation = validateApiKey(newValue, selectedConnectorType)
+                        if (!validation.valid && newValue.trim().length > 5) {
+                          // Only show error if they've typed enough to see the pattern
+                          setConnectorError(validation.error || 'Invalid API key format')
+                        } else if (validation.valid) {
+                          setConnectorError(null)
                         }
-                        placeholder="connector:storage:api"
-                      />
-                    </div>
-                    <button className="btn-primary" type="submit" disabled={connectorSubmitting}>
-                      {connectorSubmitting ? 'Saving…' : 'Register Connector'}
-                    </button>
+                      }
+                      
+                      // Load models when API key is entered and valid
+                      if (newValue.trim().length > 10) {
+                        const keyValidation = validateApiKey(newValue, selectedConnectorType)
+                        if (keyValidation.valid) {
+                          loadConnectorModels(selectedConnectorType, newValue)
+                        }
+                      } else {
+                        setConnectorAvailableModels([])
+                        setConnectorSelectedModel('')
+                      }
+                    }}
+                    placeholder={selectedConnectorType === 'claude' ? 'sk-ant-...' : 'sk-...'}
+                    required
+                    autoFocus
+                  />
+                  {connectorApiKey.trim().length > 0 && (
+                    <small style={{ display: 'block', color: connectorError ? '#ef4444' : '#888', marginTop: '0.25rem', fontSize: '0.75rem' }}>
+                      {connectorError || (selectedConnectorType === 'claude' 
+                        ? 'Format: sk-ant-... (48+ characters)'
+                        : 'Format: sk-... (48+ characters)')}
+                    </small>
+                  )}
+                </div>
+                {connectorAvailableModels.length > 0 && (
+                  <div className="form-group">
+                    <label htmlFor="connector-model">
+                      Model
+                      <small style={{ display: 'block', color: '#888', marginTop: '0.25rem', fontSize: '0.75rem' }}>
+                        If your model isn't listed, you can type it manually below
+                      </small>
+                    </label>
+                    {connectorLoadingModels ? (
+                      <div style={{ color: '#888', fontSize: '0.875rem' }}>Loading models...</div>
+                    ) : (
+                      <>
+                        <select
+                          id="connector-model"
+                          value={connectorSelectedModel}
+                          onChange={(e) => setConnectorSelectedModel(e.target.value)}
+                          style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#1a1a1a', color: '#fff', marginBottom: '0.5rem' }}
+                        >
+                          {connectorAvailableModels.map((model) => (
+                            <option key={model.id} value={model.id}>
+                              {model.displayName || model.name || model.id}
+                            </option>
+                          ))}
+                          <option value="__custom__">Custom model (enter below)</option>
+                        </select>
+                        {connectorSelectedModel === '__custom__' && (
+                          <input
+                            type="text"
+                            placeholder="Enter model name (e.g., claude-3-5-sonnet-20241022)"
+                            value={connectorCustomModel}
+                            onChange={(e) => {
+                              setConnectorCustomModel(e.target.value.trim())
+                            }}
+                            style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#1a1a1a', color: '#fff' }}
+                          />
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+                <button 
+                  className="btn-primary" 
+                  type="submit" 
+                  disabled={connectorSubmitting || connectorLoadingModels || (connectorSelectedModel === '__custom__' && !connectorCustomModel.trim())}
+                >
+                  {connectorSubmitting ? 'Saving…' : 'Connect'}
+                </button>
+                      </>
+                    )}
                   </form>
                 </div>
               )}
@@ -1211,6 +1925,13 @@ function App() {
                             <button
                               className="btn-secondary"
                               type="button"
+                              onClick={handleCopyResult}
+                            >
+                              Copy Result
+                            </button>
+                            <button
+                              className="btn-secondary"
+                              type="button"
                               onClick={handleExportResult}
                             >
                               Export Result
@@ -1346,14 +2067,38 @@ function App() {
                   <h3>Schedules</h3>
                   <p>Upcoming workflow runs from SchedulerService.</p>
                 </div>
-                <button
-                  className="btn-secondary"
-                  type="button"
-                  onClick={refreshSchedules}
-                  disabled={schedulesLoading}
-                >
-                  {schedulesLoading ? 'Refreshing…' : 'Refresh'}
-                </button>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    className="btn-primary"
+                    type="button"
+                    onClick={() => {
+                      setScheduleForm({
+                        workflowId: '',
+                        cron: '',
+                        timezone: 'UTC',
+                        cronPattern: 'daily',
+                        dailyTime: '09:00',
+                        weeklyDay: 'monday',
+                        weeklyTime: '09:00',
+                        monthlyDay: '1',
+                        monthlyTime: '09:00',
+                        hourlyMinute: '0'
+                      })
+                      setEditingScheduleId(null)
+                      setShowScheduleForm(true)
+                    }}
+                  >
+                    + Add Schedule
+                  </button>
+                  <button
+                    className="btn-secondary"
+                    type="button"
+                    onClick={refreshSchedules}
+                    disabled={schedulesLoading}
+                  >
+                    {schedulesLoading ? 'Refreshing…' : 'Refresh'}
+                  </button>
+                </div>
               </div>
               {schedulesLoading && !schedules.length ? (
                 <div className="loading small">Loading schedules…</div>
@@ -1371,26 +2116,62 @@ function App() {
                         <th>Cron</th>
                         <th>Timezone</th>
                         <th>Next Run</th>
+                        <th>Last Run</th>
                         <th>Status</th>
+                        <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {schedules.map((schedule) => (
-                        <tr key={schedule.id}>
-                          <td>#{schedule.id}</td>
-                          <td>{schedule.workflowId}</td>
-                          <td>{schedule.cron}</td>
-                          <td>{schedule.timezone ?? 'UTC'}</td>
-                          <td>{formatScheduleTime(schedule.nextRunAt)}</td>
-                          <td>
-                            <span
-                              className={`suite-status ${schedule.status === 'active' ? 'status-passed' : 'status-idle'}`}
-                            >
-                              {schedule.status.toUpperCase()}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
+                      {schedules.map((schedule) => {
+                        const workflow = workflows.find(w => w.id === schedule.workflowId)
+                        return (
+                          <tr key={schedule.id}>
+                            <td>#{schedule.id}</td>
+                            <td>{workflow ? workflow.name : `Workflow #${schedule.workflowId}`}</td>
+                            <td><code style={{ fontSize: '12px', background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px' }}>{schedule.cron}</code></td>
+                            <td>{schedule.timezone ?? 'UTC'}</td>
+                            <td>{formatScheduleTime(schedule.nextRunAt)}</td>
+                            <td>{formatScheduleTime(schedule.lastRunAt) !== '—' ? `Last: ${formatScheduleTime(schedule.lastRunAt)}` : 'Never run'}</td>
+                            <td>
+                              <span
+                                className={`suite-status ${schedule.status === 'active' ? 'status-passed' : 'status-idle'}`}
+                              >
+                                {schedule.status.toUpperCase()}
+                              </span>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <button
+                                  className="btn-secondary"
+                                  style={{ fontSize: '12px', padding: '4px 8px' }}
+                                  onClick={async () => {
+                                    if (schedule.status === 'active') {
+                                      await window.electronAPI.pauseSchedule(schedule.id)
+                                    } else {
+                                      await window.electronAPI.resumeSchedule(schedule.id)
+                                    }
+                                    await refreshSchedules()
+                                  }}
+                                >
+                                  {schedule.status === 'active' ? 'Pause' : 'Resume'}
+                                </button>
+                                <button
+                                  className="btn-danger"
+                                  style={{ fontSize: '12px', padding: '4px 8px' }}
+                                  onClick={async () => {
+                                    if (confirm(`Delete schedule #${schedule.id}?`)) {
+                                      await window.electronAPI.deleteSchedule(schedule.id)
+                                      await refreshSchedules()
+                                    }
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1398,7 +2179,695 @@ function App() {
             </section>
           </div>
         )}
+
+        {activeTab === 'settings' && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1.5rem' }}>
+            {/* Connector Settings */}
+            <section className="diagnostic-card">
+              <div className="diagnostic-card-header">
+                <div>
+                  <h3>Connector Settings</h3>
+                  <p>Manage LLM connectors and API keys.</p>
+                </div>
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={loadConnectors}
+                  disabled={connectorLoading}
+                >
+                  {connectorLoading ? 'Refreshing…' : 'Refresh'}
+                </button>
+              </div>
+              {connectorLoading && !connectors.length ? (
+                <div className="loading small">Loading connectors…</div>
+              ) : connectors.length === 0 ? (
+                <div className="empty-state compact">
+                  <p>No connectors registered. Use the "Connector Health" section to add connectors.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {connectors.map((connector) => (
+                    <div
+                      key={connector.id}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        borderRadius: '6px',
+                        padding: '12px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <div>
+                        <div style={{ color: '#fff', fontWeight: 500, marginBottom: '4px' }}>
+                          {connector.name}
+                        </div>
+                        <div style={{ color: '#aaa', fontSize: '12px' }}>
+                          {connector.kind} · {connector.version}
+                        </div>
+                        {connector.lastHealthCheck && (
+                          <div style={{ color: connector.lastHealthCheck.status === 'healthy' ? '#10b981' : '#ef4444', fontSize: '12px', marginTop: '4px' }}>
+                            {connector.lastHealthCheck.status === 'healthy' ? '✓' : '✗'} {connector.lastHealthCheck.message || connector.lastHealthCheck.status}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        className="btn-danger"
+                        style={{ fontSize: '12px', padding: '4px 8px' }}
+                        onClick={async () => {
+                          await window.electronAPI.removeConnector(connector.id)
+                          await loadConnectors()
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* Document Settings */}
+            <section className="diagnostic-card">
+              <div className="diagnostic-card-header">
+                <div>
+                  <h3>Document Settings</h3>
+                  <p>Configure document storage and defaults.</p>
+                </div>
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={loadDocuments}
+                  disabled={documentsLoading}
+                >
+                  {documentsLoading ? 'Refreshing…' : 'Refresh'}
+                </button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
+                    Default Document Path
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Configure in ConfigService..."
+                    disabled
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      background: '#0a0a0a',
+                      border: '1px solid #444',
+                      borderRadius: '4px',
+                      color: '#888',
+                      fontSize: '14px'
+                    }}
+                  />
+                  <small style={{ color: '#888', fontSize: '12px', display: 'block', marginTop: '4px' }}>
+                    Document path configuration coming soon
+                  </small>
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
+                    Registered Documents ({documents.length})
+                  </label>
+                  <div style={{ background: 'rgba(255, 255, 255, 0.05)', borderRadius: '4px', padding: '8px', fontSize: '12px', color: '#aaa' }}>
+                    {documents.length === 0 ? 'No documents registered' : `${documents.length} document(s) in registry`}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Notification Settings */}
+            <section className="diagnostic-card">
+              <div className="diagnostic-card-header">
+                <div>
+                  <h3>Notification Settings</h3>
+                  <p>Configure notification preferences and quiet hours.</p>
+                </div>
+              </div>
+              {notifications ? (
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault()
+                    try {
+                      setNotificationSaving(true)
+                      await window.electronAPI.setNotificationPreferences({
+                        quietHours: {
+                          start: notificationForm.quietStart,
+                          end: notificationForm.quietEnd
+                        },
+                        channels: notificationForm.channels.split(',').map((c) => c.trim()).filter(Boolean)
+                      })
+                      await loadDiagnostics()
+                      alert('Notification preferences saved!')
+                    } catch (error) {
+                      console.error('Failed to save notification preferences:', error)
+                      alert('Failed to save notification preferences')
+                    } finally {
+                      setNotificationSaving(false)
+                    }
+                  }}
+                >
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label htmlFor="quietStart">Quiet Hours Start</label>
+                    <input
+                      id="quietStart"
+                      type="time"
+                      value={notificationForm.quietStart}
+                      onChange={(e) => setNotificationForm({ ...notificationForm, quietStart: e.target.value })}
+                    />
+                  </div>
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label htmlFor="quietEnd">Quiet Hours End</label>
+                    <input
+                      id="quietEnd"
+                      type="time"
+                      value={notificationForm.quietEnd}
+                      onChange={(e) => setNotificationForm({ ...notificationForm, quietEnd: e.target.value })}
+                    />
+                  </div>
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label htmlFor="channels">Channels (comma-separated)</label>
+                    <input
+                      id="channels"
+                      type="text"
+                      value={notificationForm.channels}
+                      onChange={(e) => setNotificationForm({ ...notificationForm, channels: e.target.value })}
+                    />
+                  </div>
+                  <button className="btn-primary" type="submit" disabled={notificationSaving}>
+                    {notificationSaving ? 'Saving…' : 'Save Preferences'}
+                  </button>
+                </form>
+              ) : (
+                <div className="loading small">Loading notification preferences…</div>
+              )}
+            </section>
+
+            {/* File Sandbox Settings */}
+            <section className="diagnostic-card">
+              <div className="diagnostic-card-header">
+                <div>
+                  <h3>File Sandbox Settings</h3>
+                  <p>Configure allowed directories for file operations.</p>
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
+                    Allowed Directories
+                  </label>
+                  <textarea
+                    placeholder="One directory per line..."
+                    disabled
+                    style={{
+                      width: '100%',
+                      minHeight: '100px',
+                      padding: '8px',
+                      background: '#0a0a0a',
+                      border: '1px solid #444',
+                      borderRadius: '4px',
+                      color: '#888',
+                      fontSize: '14px',
+                      fontFamily: 'monospace',
+                      resize: 'vertical'
+                    }}
+                  />
+                  <small style={{ color: '#888', fontSize: '12px', display: 'block', marginTop: '4px' }}>
+                    File sandbox configuration coming soon
+                  </small>
+                </div>
+              </div>
+            </section>
+
+            {/* General Settings */}
+            <section className="diagnostic-card span-2">
+              <div className="diagnostic-card-header">
+                <div>
+                  <h3>General Settings</h3>
+                  <p>Application preferences and configuration.</p>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
+                    Theme
+                  </label>
+                  <select
+                    disabled
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      background: '#0a0a0a',
+                      border: '1px solid #444',
+                      borderRadius: '4px',
+                      color: '#888',
+                      fontSize: '14px'
+                    }}
+                  >
+                    <option>Dark (default)</option>
+                  </select>
+                  <small style={{ color: '#888', fontSize: '12px', display: 'block', marginTop: '4px' }}>
+                    Theme selection coming soon
+                  </small>
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
+                    Language
+                  </label>
+                  <select
+                    disabled
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      background: '#0a0a0a',
+                      border: '1px solid #444',
+                      borderRadius: '4px',
+                      color: '#888',
+                      fontSize: '14px'
+                    }}
+                  >
+                    <option>English (default)</option>
+                  </select>
+                  <small style={{ color: '#888', fontSize: '12px', display: 'block', marginTop: '4px' }}>
+                    Localization coming soon
+                  </small>
+                </div>
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ccc', fontSize: '14px', marginBottom: '8px' }}>
+                    <input
+                      type="checkbox"
+                      checked={telemetryEnabled}
+                      onChange={async (e) => {
+                        try {
+                          setTelemetryUpdating(true)
+                          await window.electronAPI.setTelemetryEnabled(e.target.checked)
+                          setTelemetryEnabledState(e.target.checked)
+                        } catch (error) {
+                          console.error('Failed to update telemetry setting:', error)
+                        } finally {
+                          setTelemetryUpdating(false)
+                        }
+                      }}
+                      disabled={telemetryUpdating}
+                      style={{ width: '18px', height: '18px' }}
+                    />
+                    Enable Telemetry
+                  </label>
+                  <small style={{ color: '#888', fontSize: '12px', display: 'block' }}>
+                    Help improve the app by sharing anonymous usage data
+                  </small>
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
+                    Log Path
+                  </label>
+                  <input
+                    type="text"
+                    value={logPath}
+                    disabled
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      background: '#0a0a0a',
+                      border: '1px solid #444',
+                      borderRadius: '4px',
+                      color: '#888',
+                      fontSize: '14px',
+                      fontFamily: 'monospace'
+                    }}
+                  />
+                </div>
+              </div>
+            </section>
+          </div>
+        )}
       </main>
+
+      {/* Schedule Form Modal */}
+      {showScheduleForm && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            background: '#1a1a1a',
+            border: '1px solid #333',
+            borderRadius: '8px',
+            padding: '24px',
+            width: '90%',
+            maxWidth: '600px',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            color: '#fff'
+          }}>
+            <h2 style={{ margin: '0 0 20px 0', color: '#fff' }}>
+              {editingScheduleId ? 'Edit Schedule' : 'Add Schedule'}
+            </h2>
+            
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
+                Workflow
+              </label>
+              <select
+                value={scheduleForm.workflowId}
+                onChange={(e) => setScheduleForm({ ...scheduleForm, workflowId: e.target.value })}
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  background: '#0a0a0a',
+                  border: '1px solid #444',
+                  borderRadius: '4px',
+                  color: '#fff',
+                  fontSize: '14px'
+                }}
+                disabled={!!editingScheduleId}
+              >
+                <option value="">Select a workflow...</option>
+                {workflows.map(w => (
+                  <option key={w.id} value={w.id.toString()}>{w.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
+                Schedule Pattern
+              </label>
+              <select
+                value={scheduleForm.cronPattern}
+                onChange={(e) => {
+                  const pattern = e.target.value as typeof scheduleForm.cronPattern
+                  setScheduleForm({ ...scheduleForm, cronPattern: pattern })
+                }}
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  background: '#0a0a0a',
+                  border: '1px solid #444',
+                  borderRadius: '4px',
+                  color: '#fff',
+                  fontSize: '14px'
+                }}
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="hourly">Hourly</option>
+                <option value="custom">Custom Cron Expression</option>
+              </select>
+            </div>
+
+            {scheduleForm.cronPattern === 'daily' && (
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
+                  Time
+                </label>
+                <input
+                  type="time"
+                  value={scheduleForm.dailyTime}
+                  onChange={(e) => setScheduleForm({ ...scheduleForm, dailyTime: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    background: '#0a0a0a',
+                    border: '1px solid #444',
+                    borderRadius: '4px',
+                    color: '#fff',
+                    fontSize: '14px'
+                  }}
+                />
+              </div>
+            )}
+
+            {scheduleForm.cronPattern === 'weekly' && (
+              <>
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
+                    Day of Week
+                  </label>
+                  <select
+                    value={scheduleForm.weeklyDay}
+                    onChange={(e) => setScheduleForm({ ...scheduleForm, weeklyDay: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      background: '#0a0a0a',
+                      border: '1px solid #444',
+                      borderRadius: '4px',
+                      color: '#fff',
+                      fontSize: '14px'
+                    }}
+                  >
+                    <option value="monday">Monday</option>
+                    <option value="tuesday">Tuesday</option>
+                    <option value="wednesday">Wednesday</option>
+                    <option value="thursday">Thursday</option>
+                    <option value="friday">Friday</option>
+                    <option value="saturday">Saturday</option>
+                    <option value="sunday">Sunday</option>
+                  </select>
+                </div>
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
+                    Time
+                  </label>
+                  <input
+                    type="time"
+                    value={scheduleForm.weeklyTime}
+                    onChange={(e) => setScheduleForm({ ...scheduleForm, weeklyTime: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      background: '#0a0a0a',
+                      border: '1px solid #444',
+                      borderRadius: '4px',
+                      color: '#fff',
+                      fontSize: '14px'
+                    }}
+                  />
+                </div>
+              </>
+            )}
+
+            {scheduleForm.cronPattern === 'monthly' && (
+              <>
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
+                    Day of Month (1-31)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={scheduleForm.monthlyDay}
+                    onChange={(e) => setScheduleForm({ ...scheduleForm, monthlyDay: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      background: '#0a0a0a',
+                      border: '1px solid #444',
+                      borderRadius: '4px',
+                      color: '#fff',
+                      fontSize: '14px'
+                    }}
+                  />
+                </div>
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
+                    Time
+                  </label>
+                  <input
+                    type="time"
+                    value={scheduleForm.monthlyTime}
+                    onChange={(e) => setScheduleForm({ ...scheduleForm, monthlyTime: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      background: '#0a0a0a',
+                      border: '1px solid #444',
+                      borderRadius: '4px',
+                      color: '#fff',
+                      fontSize: '14px'
+                    }}
+                  />
+                </div>
+              </>
+            )}
+
+            {scheduleForm.cronPattern === 'hourly' && (
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
+                  Minute (0-59)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="59"
+                  value={scheduleForm.hourlyMinute}
+                  onChange={(e) => setScheduleForm({ ...scheduleForm, hourlyMinute: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    background: '#0a0a0a',
+                    border: '1px solid #444',
+                    borderRadius: '4px',
+                    color: '#fff',
+                    fontSize: '14px'
+                  }}
+                />
+              </div>
+            )}
+
+            {scheduleForm.cronPattern === 'custom' && (
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
+                  Cron Expression (e.g., "0 9 * * *" for daily at 9 AM)
+                </label>
+                <input
+                  type="text"
+                  value={scheduleForm.cron}
+                  onChange={(e) => setScheduleForm({ ...scheduleForm, cron: e.target.value })}
+                  placeholder="0 9 * * *"
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    background: '#0a0a0a',
+                    border: '1px solid #444',
+                    borderRadius: '4px',
+                    color: '#fff',
+                    fontSize: '14px',
+                    fontFamily: 'monospace'
+                  }}
+                />
+                <small style={{ color: '#888', fontSize: '12px', display: 'block', marginTop: '4px' }}>
+                  Format: minute hour day month day-of-week
+                </small>
+              </div>
+            )}
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
+                Timezone
+              </label>
+              <input
+                type="text"
+                value={scheduleForm.timezone}
+                onChange={(e) => setScheduleForm({ ...scheduleForm, timezone: e.target.value })}
+                placeholder="UTC"
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  background: '#0a0a0a',
+                  border: '1px solid #444',
+                  borderRadius: '4px',
+                  color: '#fff',
+                  fontSize: '14px'
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '24px' }}>
+              <button
+                className="btn-secondary"
+                onClick={() => {
+                  setShowScheduleForm(false)
+                  setEditingScheduleId(null)
+                }}
+                disabled={scheduleSubmitting}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn-primary"
+                onClick={async () => {
+                  if (!scheduleForm.workflowId) {
+                    alert('Please select a workflow')
+                    return
+                  }
+
+                  let cronExpression = scheduleForm.cron
+                  
+                  // Generate cron expression from pattern
+                  if (scheduleForm.cronPattern !== 'custom') {
+                    const [hour, minute] = scheduleForm.cronPattern === 'daily' 
+                      ? scheduleForm.dailyTime.split(':')
+                      : scheduleForm.cronPattern === 'weekly'
+                      ? scheduleForm.weeklyTime.split(':')
+                      : scheduleForm.cronPattern === 'monthly'
+                      ? scheduleForm.monthlyTime.split(':')
+                      : ['*', scheduleForm.hourlyMinute]
+
+                    if (scheduleForm.cronPattern === 'daily') {
+                      cronExpression = `${minute} ${hour} * * *`
+                    } else if (scheduleForm.cronPattern === 'weekly') {
+                      const dayMap: Record<string, string> = {
+                        monday: '1',
+                        tuesday: '2',
+                        wednesday: '3',
+                        thursday: '4',
+                        friday: '5',
+                        saturday: '6',
+                        sunday: '0'
+                      }
+                      cronExpression = `${minute} ${hour} * * ${dayMap[scheduleForm.weeklyDay]}`
+                    } else if (scheduleForm.cronPattern === 'monthly') {
+                      cronExpression = `${minute} ${hour} ${scheduleForm.monthlyDay} * *`
+                    } else if (scheduleForm.cronPattern === 'hourly') {
+                      cronExpression = `${scheduleForm.hourlyMinute} * * * *`
+                    }
+                  }
+
+                  if (!cronExpression) {
+                    alert('Please provide a cron expression')
+                    return
+                  }
+
+                  try {
+                    setScheduleSubmitting(true)
+                    await window.electronAPI.addSchedule(
+                      parseInt(scheduleForm.workflowId),
+                      cronExpression,
+                      { timezone: scheduleForm.timezone || 'UTC' }
+                    )
+                    setShowScheduleForm(false)
+                    setEditingScheduleId(null)
+                    await refreshSchedules()
+                  } catch (error) {
+                    console.error('Failed to create schedule:', error)
+                    alert(`Failed to create schedule: ${error instanceof Error ? error.message : String(error)}`)
+                  } finally {
+                    setScheduleSubmitting(false)
+                  }
+                }}
+                disabled={scheduleSubmitting || !scheduleForm.workflowId}
+              >
+                {scheduleSubmitting ? 'Saving...' : editingScheduleId ? 'Update' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Workflow Execution View */}
+      {viewingExecution && (
+        <WorkflowExecutionView
+          runId={viewingExecution.runId}
+          workflowId={viewingExecution.workflowId}
+          draftId={viewingExecution.draftId}
+          onClose={() => setViewingExecution(null)}
+        />
+      )}
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import { spawn } from 'child_process'
+import { app } from 'electron'
 import { ListedTestSuite, TestRunResult, TestSuiteDefinition } from '../../shared/testRunnerTypes'
 
 interface TestRunnerOptions {
@@ -14,8 +15,8 @@ const SUITES: TestSuiteDefinition[] = [
     tags: ['runtime', 'workflows'],
     steps: ['Launch vitest CLI', 'Execute workflowRuntime suite', 'Collect vitest results'],
     estimatedDurationMs: 2000,
-    command: 'npm',
-    args: ['run', 'test', '--', 'src/__tests__/workflowRuntime.test.ts']
+    command: 'npx',
+    args: ['vitest', 'run', 'src/__tests__/workflowRuntime.test.ts']
   },
   {
     id: 'storage-paths',
@@ -25,8 +26,8 @@ const SUITES: TestSuiteDefinition[] = [
     tags: ['filesystem', 'settings'],
     steps: ['Launch vitest CLI', 'Execute appPaths suite', 'Validate directory + file resolution'],
     estimatedDurationMs: 2000,
-    command: 'npm',
-    args: ['run', 'test', '--', 'src/__tests__/appPaths.test.ts']
+    command: 'npx',
+    args: ['vitest', 'run', 'src/__tests__/appPaths.test.ts']
   },
   {
     id: 'config-service',
@@ -39,8 +40,8 @@ const SUITES: TestSuiteDefinition[] = [
       'Confirm snapshot export/import behavior'
     ],
     estimatedDurationMs: 2000,
-    command: 'npm',
-    args: ['run', 'test', '--', 'src/__tests__/configService.test.ts']
+    command: 'npx',
+    args: ['vitest', 'run', 'src/__tests__/configService.test.ts']
   },
   {
     id: 'workflow-validation',
@@ -49,8 +50,8 @@ const SUITES: TestSuiteDefinition[] = [
     tags: ['workflows', 'validation'],
     steps: ['Launch vitest CLI', 'Execute validationService suite', 'Aggregate warnings/errors'],
     estimatedDurationMs: 2000,
-    command: 'npm',
-    args: ['run', 'test', '--', 'src/__tests__/validationService.test.ts']
+    command: 'npx',
+    args: ['vitest', 'run', 'src/__tests__/validationService.test.ts']
   },
   {
     id: 'workflow-drafts',
@@ -59,8 +60,8 @@ const SUITES: TestSuiteDefinition[] = [
     tags: ['workflows', 'drafts'],
     steps: ['Launch vitest CLI', 'Execute workflowDraftService suite', 'Report validation issues'],
     estimatedDurationMs: 2000,
-    command: 'npm',
-    args: ['run', 'test', '--', 'src/__tests__/workflowDraftService.test.ts']
+    command: 'npx',
+    args: ['vitest', 'run', 'src/__tests__/workflowDraftService.test.ts']
   },
   {
     id: 'document-service',
@@ -69,8 +70,8 @@ const SUITES: TestSuiteDefinition[] = [
     tags: ['documents', 'export'],
     steps: ['Launch vitest CLI', 'Execute documentService suite', 'Verify outputs'],
     estimatedDurationMs: 2000,
-    command: 'npm',
-    args: ['run', 'test', '--', 'src/__tests__/documentService.test.ts']
+    command: 'npx',
+    args: ['vitest', 'run', 'src/__tests__/documentService.test.ts']
   },
   {
     id: 'logging-service',
@@ -79,8 +80,8 @@ const SUITES: TestSuiteDefinition[] = [
     tags: ['ops', 'logging'],
     steps: ['Launch vitest CLI', 'Execute loggingService suite'],
     estimatedDurationMs: 2000,
-    command: 'npm',
-    args: ['run', 'test', '--', 'src/__tests__/loggingService.test.ts']
+    command: 'npx',
+    args: ['vitest', 'run', 'src/__tests__/loggingService.test.ts']
   },
   {
     id: 'scheduler-service',
@@ -89,8 +90,8 @@ const SUITES: TestSuiteDefinition[] = [
     tags: ['ops', 'automation'],
     steps: ['Launch vitest CLI', 'Execute schedulerService suite'],
     estimatedDurationMs: 2000,
-    command: 'npm',
-    args: ['run', 'test', '--', 'src/__tests__/schedulerService.test.ts']
+    command: 'npx',
+    args: ['vitest', 'run', 'src/__tests__/schedulerService.test.ts']
   },
   {
     id: 'template-registry',
@@ -99,8 +100,8 @@ const SUITES: TestSuiteDefinition[] = [
     tags: ['templates', 'documents'],
     steps: ['Launch vitest CLI', 'Execute templateRegistry suite'],
     estimatedDurationMs: 2000,
-    command: 'npm',
-    args: ['run', 'test', '--', 'src/__tests__/templateRegistry.test.ts']
+    command: 'npx',
+    args: ['vitest', 'run', 'src/__tests__/templateRegistry.test.ts']
   }
 ]
 
@@ -194,18 +195,57 @@ export class TestRunnerService {
     await new Promise((resolve) => setTimeout(resolve, ms))
   }
 
-  private runSuiteCommand(
+
+  private async runSuiteCommand(
     suite: TestSuiteDefinition,
     logs: string[]
   ): Promise<{ exitCode: number | null; errorMessage?: string }> {
-    const command = suite.command!
-    const args = suite.args ?? []
+    // Run tests using Electron's Node.js runtime - no rebuild needed!
+    // This ensures tests run in the same runtime as the application
+    // When command is 'npx', we use Electron's Node.js to run vitest
+    const path = require('path')
+    const fs = require('fs')
+    
+    let command: string
+    let args: string[]
+    
+    if (suite.command === 'npx') {
+      // Use Electron's Node.js to run vitest
+      // process.execPath is Electron, and with ELECTRON_RUN_AS_NODE it acts as Node.js
+      command = process.execPath
+      // Find vitest script in node_modules/.bin
+      const vitestBin = path.join(process.cwd(), 'node_modules', '.bin', 'vitest')
+      const vitestScript = path.join(process.cwd(), 'node_modules', 'vitest', 'dist', 'cli.js')
+      
+      // Use the actual vitest entry point
+      if (fs.existsSync(vitestScript)) {
+        args = [vitestScript, ...(suite.args ?? []).slice(1)] // Skip 'vitest' from original args
+      } else {
+        // Fallback: try to find vitest via require.resolve
+        try {
+          const vitestMain = require.resolve('vitest')
+          args = [vitestMain, ...(suite.args ?? []).slice(1)]
+        } catch {
+          // Last resort: use original args and hope npx works
+          args = suite.args ?? []
+          command = 'npx'
+        }
+      }
+      logs.push(`[${new Date().toISOString()}] 🔧 Running tests with Electron's Node.js runtime (no rebuild needed)`)
+    } else {
+      command = suite.command!
+      args = suite.args ?? []
+    }
 
     return new Promise((resolve) => {
       const child = spawn(command, args, {
         cwd: suite.cwd ?? process.cwd(),
         shell: process.platform === 'win32',
-        env: process.env
+        env: {
+          ...process.env,
+          // Tell Electron to run as Node.js
+          ELECTRON_RUN_AS_NODE: '1'
+        }
       })
 
       const appendLines = (prefix: string, chunk: Buffer) => {

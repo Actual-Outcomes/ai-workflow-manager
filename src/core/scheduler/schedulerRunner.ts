@@ -1,9 +1,8 @@
 import { WorkflowDatabase } from '../database'
 import { LoggingService } from '../logging/loggingService'
 import { NotificationPreferenceService } from '../notifications/notificationPreferenceService'
-import { WorkflowStatus } from '../domain/workflows'
-import { WorkflowRuntime } from '../workflows/workflowRuntime'
-import { WorkflowDraft, WorkflowDraftContent } from '../workflows/workflowTypes'
+import { WorkflowExecutionService } from '../workflows/workflowExecutionService'
+import { WorkflowDraftService } from '../workflows/workflowDraftService'
 import { ScheduleRecord, SchedulerService } from './schedulerService'
 import { RetentionService } from '../ops/retentionService'
 
@@ -16,7 +15,8 @@ export class SchedulerRunner {
   constructor(
     private scheduler: SchedulerService,
     private workflowDb: WorkflowDatabase,
-    private workflowRuntime: WorkflowRuntime,
+    private workflowExecutionService: WorkflowExecutionService,
+    private workflowDraftService: WorkflowDraftService,
     private loggingService: LoggingService,
     private notificationPrefs: NotificationPreferenceService,
     private retentionService?: RetentionService,
@@ -57,52 +57,66 @@ export class SchedulerRunner {
         return
       }
 
-      const versions = this.workflowDb.listWorkflowVersions(schedule.workflowId)
-      const latest = versions[0]
-      if (!latest) {
-        this.loggingService.log({
-          category: 'scheduler',
-          action: 'workflow-version-missing',
-          metadata: { scheduleId: schedule.id, workflowId: workflow.id }
-        })
-        return
-      }
+      // Try to get a draft for this workflow
+      // First, try to find a draft by workflow ID or name
+      const allDrafts = this.workflowDraftService.listDrafts()
+      let draft = allDrafts.find(d => d.id === schedule.workflowId || d.name === workflow.name)
+      
+      // If no draft found, create one from the latest workflow version
+      if (!draft) {
+        const versions = this.workflowDb.listWorkflowVersions(schedule.workflowId)
+        const latest = versions[0]
+        if (!latest) {
+          this.loggingService.log({
+            category: 'scheduler',
+            action: 'workflow-version-missing',
+            metadata: { scheduleId: schedule.id, workflowId: workflow.id }
+          })
+          return
+        }
 
-      const content = this.parseDefinition(latest.definition_json)
-      const draft: WorkflowDraft = {
-        id: workflow.id,
-        name: workflow.name,
-        description: workflow.description ?? '',
-        status: (workflow.status as WorkflowStatus) ?? 'draft',
-        version: latest.version,
-        createdAt: workflow.created_at,
-        updatedAt: workflow.updated_at,
-        nodes: content.nodes,
-        transitions: content.transitions
+        // Create a draft from the workflow version
+        try {
+          const content = this.parseDefinition(latest.definition_json)
+          draft = this.workflowDraftService.createDraft(workflow.name, workflow.description ?? '')
+          this.workflowDraftService.updateDraft(draft.id, {
+            content: {
+              nodes: content.nodes,
+              transitions: content.transitions
+            }
+          })
+        } catch (error) {
+          this.loggingService.log({
+            category: 'scheduler',
+            action: 'draft-creation-error',
+            metadata: {
+              scheduleId: schedule.id,
+              workflowId: workflow.id,
+              error: error instanceof Error ? error.message : String(error)
+            }
+          })
+          return
+        }
       }
 
       try {
-        const instance = this.workflowRuntime.start(draft)
+        const runId = await this.workflowExecutionService.executeWorkflow(
+          draft,
+          schedule.workflowId,
+          { workflowVersionId: null }
+        )
         this.loggingService.log({
           category: 'scheduler',
           action: 'run-started',
           metadata: {
             scheduleId: schedule.id,
             workflowId: workflow.id,
-            runtimeInstanceId: instance.id
+            runId
           }
         })
         this.sendNotification(schedule, workflow.name, 'started')
-        this.workflowRuntime.complete(instance.id)
-        this.loggingService.log({
-          category: 'scheduler',
-          action: 'run-completed',
-          metadata: {
-            scheduleId: schedule.id,
-            workflowId: workflow.id,
-            runtimeInstanceId: instance.id
-          }
-        })
+        // Note: WorkflowExecutionService handles completion asynchronously
+        // We don't need to wait for completion here
       } catch (error) {
         this.loggingService.log({
           category: 'scheduler',
@@ -119,7 +133,7 @@ export class SchedulerRunner {
     await this.retentionService?.enforce()
   }
 
-  private parseDefinition(payload: string): WorkflowDraftContent {
+  private parseDefinition(payload: string): { nodes: unknown[]; transitions: unknown[] } {
     try {
       const parsed = JSON.parse(payload ?? '{}')
       return {

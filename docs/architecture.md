@@ -19,6 +19,7 @@ AI Workflow Manager is an Electron-based desktop application with a React render
   - Application services orchestrating use cases (workflow authoring, execution, document management). Implemented using command handlers and repositories.
   - Workflow runtime modeled as a state machine (consider `xstate` or custom implementation) with explicit states, events, guards, and actions.
   - Domain entities/value objects representing workflows, nodes, transitions, triggers, validators, documents.
+  - **UICard node type** for human-in-the-loop workflows, enabling visual data presentation and user input collection during execution.
 
 - **Outbound Ports & Adapters**
   - **Storage Connector Port (`WorkflowDataConnector`)** with adapters (`LocalSqliteConnector`, future REST/Dynamo adapters).
@@ -86,6 +87,7 @@ Switching to a REST backend only changes configuration: the factory instantiates
 
 - **Node Definitions**
   - Each node type describes entry actions, exit actions, available user actions, triggers, and validators. Definitions live as domain configuration objects independent of UI. See `docs/workflow-engine.md` for semantics.
+  - **UICard nodes** extend the node taxonomy to support human-in-the-loop workflows. Cards contain layout definitions (display elements and input components), data bindings to workflow context, and validation rules. During execution, cards pause workflow progress until user interaction is complete, then store collected data in workflow context for downstream steps.
 
 - **Execution Managers**
   - Long-running actions executed by background workers using Command pattern to encapsulate side effects.
@@ -145,10 +147,12 @@ Switching to a REST backend only changes configuration: the factory instantiates
 
 ## UX & Settings Architecture
 
-- **Visual Designer**: Planned renderer module featuring drag-and-drop node palette, connection editing, property inspector, and validation feedback. Backed by the same serialized workflow format used by the runtime.
-- **Settings Panels**: Centralized configuration UI for connectors, credentials, document paths, and workflow defaults. Mirrors CLI commands for parity.
-- **Editors**: Embed syntax-highlighted editors for text/Markdown/JSON/YAML, structured viewers for CSV/TSV, and HTML preview/editing capabilities.
-- **CLI Parity**: CLI commands expose critical management tasks (connector selection, credential updates, workflow execution) to support headless operation.
+- **Visual Designer**: ✅ Implemented renderer module with React Flow featuring drag-and-drop node palette, connection editing, property inspector, and validation feedback. Backed by the same serialized workflow format used by the runtime.
+- **Connector Management UI**: ✅ Implemented connector registration, health checks, and model selection for LLM connectors (Claude, ChatGPT).
+- **Workflow Execution UI**: ✅ Basic execution UI with run history. Real-time monitoring planned for Sprint 7.
+- **Settings Panels**: Centralized configuration UI for connectors, credentials, document paths, and workflow defaults. Mirrors CLI commands for parity. (Partial - connector UI implemented)
+- **Editors**: Embed syntax-highlighted editors for text/Markdown/JSON/YAML, structured viewers for CSV/TSV, and HTML preview/editing capabilities. (Future)
+- **CLI Parity**: ✅ CLI commands expose critical management tasks (connector selection, credential updates, workflow execution) to support headless operation.
 
 ## Security, Logging, and Operations
 
@@ -158,7 +162,9 @@ Switching to a REST backend only changes configuration: the factory instantiates
   - Secrets retrieved on-demand; domain services receive opaque tokens or client instances rather than raw keys.
 
 - **Logging/Telemetry**
-  - `WorkflowEventPublisher` acts as central observer hub. Logging adapters subscribe to publish structured JSON logs.
+  - ✅ `LoggingService` implemented with structured JSON logging.
+  - ✅ `TelemetryService` implemented with event queuing.
+  - `WorkflowEventPublisher` planned for Sprint 7 to act as central observer hub for workflow execution events.
   - Telemetry exporters (future) subscribe separately to send anonymized metrics.
   - Ensure correlation IDs propagate through commands/events for traceability.
 

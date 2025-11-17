@@ -233,6 +233,8 @@
   transition:
     transform 0.2s,
     box-shadow 0.2s;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .workflow-card:hover {
@@ -275,8 +277,15 @@
 
 .workflow-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   align-items: center;
+  margin-top: 1rem;
+}
+
+.workflow-actions button,
+.workflow-actions select {
+  flex-shrink: 0;
 }
 
 .status-select {

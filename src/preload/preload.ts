@@ -17,6 +17,7 @@ import { ExportDocumentPayload } from '../core/documents/documentService'
 import { NotificationPreferences } from '../core/notifications/types'
 import { ScheduleRecord } from '../core/scheduler/schedulerService'
 import { TemplateRecord } from '../core/templates/templateRegistry'
+import { WorkflowEvent } from '../core/workflows/workflowEventPublisher'
 
 // Expose protected methods that allow the renderer process to use
 // ipcRenderer without exposing the entire object
@@ -46,7 +47,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('connectors:test', id),
   registerConnector: (definition: ManagedConnectorDefinition) =>
     ipcRenderer.invoke('connectors:register', definition),
-  removeConnector: (id: string) => ipcRenderer.invoke('connectors:remove', id),
+    removeConnector: (id: string) => ipcRenderer.invoke('connectors:remove', id),
+    listConnectorModels: (connectorId: string) => ipcRenderer.invoke('connectors:list-models', connectorId),
+    storeSecret: (secret: { key: string; value: string }) =>
+      ipcRenderer.invoke('vault:store-secret', secret),
 
   // Config
   getConfigValue: (path: string): Promise<unknown> => ipcRenderer.invoke('config:get', path),
@@ -78,6 +82,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
   validateWorkflowDraft: (id: number): Promise<WorkflowDraftValidationResult> =>
     ipcRenderer.invoke('workflow-drafts:validate', id),
   publishWorkflowDraft: (id: number) => ipcRenderer.invoke('workflow-drafts:publish', id),
+
+  // Workflow execution
+  executeWorkflow: (draftId: number, workflowId: number, options?: { workflowVersionId?: number; initialVariables?: Record<string, unknown> }) =>
+    ipcRenderer.invoke('workflow:execute', draftId, workflowId, options),
+  listWorkflowRuns: (workflowId: number) => ipcRenderer.invoke('workflow:runs:list', workflowId),
+  getWorkflowRun: (runId: number) => ipcRenderer.invoke('workflow:runs:get', runId),
+  getWorkflowRunEvents: (runId: number) => ipcRenderer.invoke('workflow:runs:events', runId),
+  pauseWorkflowRun: (runId: number) => ipcRenderer.invoke('workflow:runs:pause', runId),
+  resumeWorkflowRun: (runId: number, draftId: number) => ipcRenderer.invoke('workflow:runs:resume', runId, draftId),
+  exportWorkflow: (draftId: number) => ipcRenderer.invoke('workflow:export', draftId),
+  importWorkflow: (manifest: any) => ipcRenderer.invoke('workflow:import', manifest),
+  listWorkflowTemplates: () => ipcRenderer.invoke('workflow:templates:list'),
+  getWorkflowTemplate: (name: string) => ipcRenderer.invoke('workflow:templates:get', name),
+  onWorkflowEvent: (callback: (event: WorkflowEvent) => void) => {
+    const handler = (_: unknown, event: WorkflowEvent) => callback(event)
+    ipcRenderer.on('workflow-event', handler)
+    return () => {
+      ipcRenderer.removeListener('workflow-event', handler)
+    }
+  },
 
   // Documents
   listDocuments: (): Promise<DocumentRecord[]> => ipcRenderer.invoke('documents:list'),
@@ -123,9 +147,11 @@ export type ElectronAPI = {
   runTestSuite: (suiteId: string) => Promise<TestRunResult>
   listConnectors: () => Promise<ConnectorSummary[]>
   getConnectorDetails: (id: string) => Promise<ConnectorSummary | null>
-  testConnector: (id: string) => Promise<HealthCheckResult>
-  registerConnector: (definition: ManagedConnectorDefinition) => Promise<ConnectorSummary>
-  removeConnector: (id: string) => Promise<{ success: boolean }>
+    testConnector: (id: string) => Promise<HealthCheckResult>
+    registerConnector: (definition: ManagedConnectorDefinition) => Promise<ConnectorSummary>
+    removeConnector: (id: string) => Promise<{ success: boolean }>
+    listConnectorModels: (connectorId: string) => Promise<any[]>
+    storeSecret: (secret: { key: string; value: string }) => Promise<void>
   getConfigValue: (path: string) => Promise<unknown>
   setConfigValue: (path: string, value: unknown) => Promise<{ success: boolean }>
   listConfigSections: () => Promise<string[]>
@@ -142,6 +168,17 @@ export type ElectronAPI = {
   deleteWorkflowDraft: (id: number) => Promise<{ success: boolean }>
   validateWorkflowDraft: (id: number) => Promise<WorkflowDraftValidationResult>
   publishWorkflowDraft: (id: number) => Promise<{ workflow: Workflow; draft: WorkflowDraft }>
+  executeWorkflow: (draftId: number, workflowId: number, options?: { workflowVersionId?: number; initialVariables?: Record<string, unknown> }) => Promise<{ runId: number }>
+  listWorkflowRuns: (workflowId: number) => Promise<any[]>
+  getWorkflowRun: (runId: number) => Promise<any | null>
+  getWorkflowRunEvents: (runId: number) => Promise<any[]>
+  pauseWorkflowRun: (runId: number) => Promise<{ success: boolean }>
+  resumeWorkflowRun: (runId: number, draftId: number) => Promise<{ success: boolean }>
+  exportWorkflow: (draftId: number) => Promise<any>
+  importWorkflow: (manifest: any) => Promise<any>
+  listWorkflowTemplates: () => Promise<any[]>
+  getWorkflowTemplate: (name: string) => Promise<any | null>
+  onWorkflowEvent: (callback: (event: WorkflowEvent) => void) => () => void
   listDocuments: () => Promise<DocumentRecord[]>
   exportDocument: (
     payload: ExportDocumentPayload

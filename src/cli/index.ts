@@ -24,6 +24,10 @@ import { SecurityScanner } from '../core/ops/securityScanner'
 import { TemplatePermissionRole, TemplateRegistry } from '../core/templates/templateRegistry'
 import { TemplateManifestService } from '../core/templates/templateManifestService'
 import { TemplateDiffService } from '../core/templates/templateDiffService'
+import { WorkflowExecutionService } from '../core/workflows/workflowExecutionService'
+import { WorkflowRunRepository } from '../core/workflows/workflowRunRepository'
+import { DocxBuilder, PdfBuilder, MarkdownBuilder } from '../core/documents/documentBuilder'
+import Database from 'better-sqlite3'
 import fs from 'fs'
 
 const program = new Command()
@@ -51,6 +55,13 @@ const securityScanner = new SecurityScanner(loggingService)
 const templateRegistry = new TemplateRegistry()
 const templateManifestService = new TemplateManifestService(templateRegistry)
 const templateDiffService = new TemplateDiffService()
+const workflowRunRepository = new WorkflowRunRepository((workflowDb as any).db as Database.Database)
+const workflowExecutionService = new WorkflowExecutionService(
+  workflowRunRepository,
+  connectorRegistry,
+  documentService,
+  validationService
+)
 const workflowCommand = program.command('workflow').description('Workflow operations')
 
 const draftCommand = workflowCommand.command('draft').description('Manage workflow drafts')
@@ -113,6 +124,154 @@ draftCommand
   .action((id) => {
     workflowDraftService.deleteDraft(parseInt(id, 10))
     console.log(`🗑️  Deleted draft ${id}`)
+  })
+
+// Workflow execution commands
+const runCommand = workflowCommand.command('run').description('Execute workflow runs')
+
+runCommand
+  .command('start')
+  .description('Start a workflow execution')
+  .argument('<draftId>', 'Draft ID to execute')
+  .argument('<workflowId>', 'Workflow ID')
+  .option('--var <key=value>', 'Initial variable (key=value)', (value: string, previous: string[] = []) => {
+    previous.push(value)
+    return previous
+  }, [])
+  .action(async (draftId, workflowId, options) => {
+    try {
+      const draft = workflowDraftService.getDraft(parseInt(draftId, 10))
+      if (!draft) {
+        console.error(`❌ Draft ${draftId} not found`)
+        process.exit(1)
+      }
+      
+      const initialVariables: Record<string, unknown> = {}
+      if (options.var) {
+        for (const varEntry of options.var) {
+          const [key, value] = varEntry.split('=')
+          if (key && value) {
+            initialVariables[key] = value
+          }
+        }
+      }
+      
+      const runId = await workflowExecutionService.executeWorkflow(
+        draft,
+        parseInt(workflowId, 10),
+        { initialVariables }
+      )
+      console.log(`🚀 Workflow execution started! Run ID: ${runId}`)
+    } catch (error) {
+      console.error(`❌ Failed to execute workflow: ${error instanceof Error ? error.message : String(error)}`)
+      process.exit(1)
+    }
+  })
+
+const runsCommand = runCommand.command('runs').description('Manage workflow runs')
+
+runsCommand
+  .command('list')
+  .description('List runs for a workflow')
+  .argument('<workflowId>', 'Workflow ID')
+  .action((workflowId) => {
+    const runs = workflowRunRepository.getRunsByWorkflow(parseInt(workflowId, 10))
+    if (!runs.length) {
+      console.log('\nℹ️  No runs found for this workflow.\n')
+      return
+    }
+    console.log('\n📊 Workflow Runs:\n')
+    runs.forEach((run) => {
+      console.log(`[${run.id}] Status: ${run.status.toUpperCase()}`)
+      console.log(`   Started: ${new Date(run.started_at).toLocaleString()}`)
+      if (run.completed_at) {
+        console.log(`   Completed: ${new Date(run.completed_at).toLocaleString()}`)
+      }
+      if (run.current_node_id) {
+        console.log(`   Current Node: ${run.current_node_id}`)
+      }
+      if (run.error) {
+        console.log(`   Error: ${run.error}`)
+      }
+      console.log()
+    })
+  })
+
+runsCommand
+  .command('show')
+  .description('Show run details and events')
+  .argument('<runId>', 'Run ID')
+  .action((runId) => {
+    const run = workflowRunRepository.getRun(parseInt(runId, 10))
+    if (!run) {
+      console.error(`❌ Run ${runId} not found`)
+      process.exit(1)
+    }
+    console.log(`\n📊 Run ${runId}:\n`)
+    console.log(`Status: ${run.status.toUpperCase()}`)
+    console.log(`Started: ${new Date(run.started_at).toLocaleString()}`)
+    if (run.completed_at) {
+      console.log(`Completed: ${new Date(run.completed_at).toLocaleString()}`)
+    }
+    if (run.current_node_id) {
+      console.log(`Current Node: ${run.current_node_id}`)
+    }
+    if (run.error) {
+      console.log(`Error: ${run.error}`)
+    }
+    
+    const events = workflowRunRepository.getRunEvents(parseInt(runId, 10))
+    if (events.length) {
+      console.log('\n📝 Events:')
+      events.forEach((event) => {
+        console.log(`  [${new Date(event.timestamp).toLocaleTimeString()}] ${event.type}`)
+        if (event.payload_json) {
+          try {
+            const payload = JSON.parse(event.payload_json)
+            if (Object.keys(payload).length > 0) {
+              console.log(`    ${JSON.stringify(payload, null, 2).split('\n').join('\n    ')}`)
+            }
+          } catch {
+            // Ignore parse errors
+          }
+        }
+      })
+    }
+    console.log()
+  })
+
+runsCommand
+  .command('pause')
+  .description('Pause a running workflow')
+  .argument('<runId>', 'Run ID')
+  .action(async (runId) => {
+    try {
+      await workflowExecutionService.pauseRun(parseInt(runId, 10))
+      console.log(`⏸️  Run ${runId} paused`)
+    } catch (error) {
+      console.error(`❌ Failed to pause run: ${error instanceof Error ? error.message : String(error)}`)
+      process.exit(1)
+    }
+  })
+
+runsCommand
+  .command('resume')
+  .description('Resume a paused workflow')
+  .argument('<runId>', 'Run ID')
+  .argument('<draftId>', 'Draft ID')
+  .action(async (runId, draftId) => {
+    try {
+      const draft = workflowDraftService.getDraft(parseInt(draftId, 10))
+      if (!draft) {
+        console.error(`❌ Draft ${draftId} not found`)
+        process.exit(1)
+      }
+      await workflowExecutionService.resumeRun(parseInt(runId, 10), draft)
+      console.log(`▶️  Run ${runId} resumed`)
+    } catch (error) {
+      console.error(`❌ Failed to resume run: ${error instanceof Error ? error.message : String(error)}`)
+      process.exit(1)
+    }
   })
 
 const documentCommand = program.command('document').description('Document workspace operations')
@@ -685,9 +844,10 @@ const collectValues = (value: string, previous: string[] = []) => {
 
 const parseCapability = (value: string): ConnectorCapability => {
   const [name, ...descriptionParts] = value.split(':')
+  const description = descriptionParts.length > 0 ? descriptionParts.join(':').trim() : ''
   return {
     name: name.trim(),
-    description: descriptionParts.length ? descriptionParts.join(':').trim() : undefined
+    description: description || 'No description'
   }
 }
 
@@ -918,9 +1078,9 @@ credentialsCommand
     console.log(`✅ Removed secret for ${key}`)
   })
 
-const documentCommand = program.command('doc').description('Document operations')
+const docCommand = program.command('doc').description('Document operations')
 
-documentCommand
+docCommand
   .command('list')
   .description('List documents in registry')
   .action(() => {
@@ -934,7 +1094,7 @@ documentCommand
     })
   })
 
-documentCommand
+docCommand
   .command('export')
   .description('Export document content to file')
   .argument('<name>', 'Document name')

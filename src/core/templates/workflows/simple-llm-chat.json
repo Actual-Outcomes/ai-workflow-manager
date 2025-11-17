@@ -1,0 +1,63 @@
+{
+  "name": "Simple LLM Chat",
+  "description": "A basic workflow that sends a prompt to an LLM and returns the response",
+  "category": "LLM",
+  "nodes": [
+    {
+      "id": "start-1",
+      "type": "start",
+      "label": "Start",
+      "entryActions": [],
+      "exitActions": [],
+      "metadata": {
+        "position": { "x": 100, "y": 100 }
+      }
+    },
+    {
+      "id": "action-1",
+      "type": "action",
+      "label": "LLM Chat",
+      "entryActions": [
+        {
+          "id": "action-1-entry",
+          "type": "llm.chat",
+          "config": {
+            "prompt": "Hello! How can I help you today?",
+            "outputVariable": "llmResponse"
+          }
+        }
+      ],
+      "exitActions": [],
+      "metadata": {
+        "position": { "x": 300, "y": 100 }
+      }
+    },
+    {
+      "id": "end-1",
+      "type": "end",
+      "label": "End",
+      "entryActions": [],
+      "exitActions": [],
+      "metadata": {
+        "position": { "x": 500, "y": 100 }
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "source": "start-1",
+      "target": "action-1",
+      "trigger": null,
+      "validators": []
+    },
+    {
+      "id": "t2",
+      "source": "action-1",
+      "target": "end-1",
+      "trigger": null,
+      "validators": []
+    }
+  ]
+}
+

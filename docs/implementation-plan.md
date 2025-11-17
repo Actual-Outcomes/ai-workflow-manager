@@ -12,6 +12,9 @@ This document captures the planned implementation approach for each major archit
 - ValidationService (nodes, transitions, templates)
 - WorkflowEventPublisher (events/logging)
 - WorkflowExportService / WorkflowImportService
+- UICardNode (human-in-the-loop node type)
+- UICardEditor (visual card designer)
+- UICardRuntime (card rendering and submission handler)
 
 ### Connectors & Credentials
 
@@ -69,6 +72,20 @@ For each component, capture:
   1. Wire runtime events into designer autosave messaging and future scheduler hooks.
   2. Add persistence snapshots + resume flows linked to WorkflowDraft history.
   3. Extend export/import once TemplateRegistry is in place.
+
+### 3.1.1 UICard Node & Runtime
+
+- **Overview**: Human-in-the-loop workflow node type that presents data visually and collects user input during execution.
+- **Progress**: Product requirements defined in `docs/product-backlog.md`. Core dependencies (Workflow Designer, Execution Engine, Event System, Context/Variables) are complete.
+- **Next Steps**:
+  1. Define UICard data model (layout blocks, fields, bindings, validation rules).
+  2. Implement UICard node type in workflow domain (extend node taxonomy).
+  3. Build UICardEditor component (visual card designer with drag-and-drop layout).
+  4. Implement UICardRuntime component (card rendering and submission handler).
+  5. Integrate UICard execution into WorkflowExecutionService (pause workflow, display card, collect input, resume).
+  6. Store card submissions in workflow context for downstream steps.
+  7. Add database schema for card definitions and submission history.
+  8. Create unit/integration tests for card design, rendering, and data flow.
 
 ### 3.2 ConnectorRegistry & CredentialVault
 
@@ -133,57 +150,70 @@ Below are actionable task lists derived from the outlines above. Each task can m
 - [x] Implement WorkflowDraftService with autosave + versioning, backed by SQLite repositories.
 - [x] Build ValidationService covering nodes/transitions/templates with IPC exposure.
 - [x] Implement command bus + WorkflowRuntime (skeleton) and event publisher integration.
-- [ ] Create persistence snapshot layer (pause/resume) and connect to WorkflowRuntime.
+- [x] Create persistence snapshot layer (pause/resume) and connect to WorkflowRuntime.
 - [x] Expose runtime + validation commands via preload IPC and CLI equivalents.
-- [ ] Implement WorkflowExport/Import including JSON schema + tests.
+- [ ] Implement WorkflowExport/Import including JSON schema + tests. (Sprint 7)
 - [x] Author unit/integration tests (draft persistence, runtime flows, validation).
+- [x] Visual Workflow Designer with React Flow (Sprint 6)
+- [x] Node property editor for action configuration (Sprint 6)
+- [x] WorkflowEventPublisher for real-time updates (Sprint 7)
+- [ ] UICard node type implementation (human-in-the-loop workflows)
+- [ ] UICardEditor component (visual card designer)
+- [ ] UICardRuntime component (card rendering and submission)
 
 ### ConnectorRegistry & CredentialVault
 
-- [ ] Scaffold ConnectorRegistry interfaces and registry container.
-- [ ] Implement adapter factories for storage/LLM/file/document connectors.
-- [ ] Build CredentialVault adapters (Win/Mac/Linux/fallback) with abstraction layer.
-- [ ] Create ConfigService entries for connector selections + profiles.
-- [ ] Add connector health-check API and scheduled test job feeding notifications.
-- [ ] Wire CLI/settings UI to registry/vault operations with audit logging.
-- [ ] Write contract tests for adapters + vault integration tests.
+- [x] Scaffold ConnectorRegistry interfaces and registry container.
+- [x] Implement adapter factories for LLM connectors (Claude, ChatGPT).
+- [x] Build CredentialVault with encrypted storage (fallback implementation).
+- [x] Create ConfigService entries for connector selections.
+- [x] Add connector health-check API and UI testing.
+- [x] Wire CLI/settings UI to registry/vault operations.
+- [x] Model selection and API key validation (Sprint 5-6)
+- [ ] Storage/document connector adapters (future)
+- [ ] Platform-specific keychain adapters (Windows CredMgr, macOS Keychain) (future)
 
 ### Document & Template Services
 
 - [x] Define DocumentRegistry schema/tables and persistence APIs.
 - [x] Implement DocumentBuilder strategies (DOCX/PDF/Markdown) with shared interface.
 - [x] Build TemplateRegistry and revision tracking + diff tooling.
-- [ ] Implement TemplateRegistry permissions/dependencies and TemplateExport/Import services with signing.
+- [ ] Implement TemplateRegistry permissions/dependencies and TemplateExport/Import services with signing. (future)
 - [x] Integrate DocumentWorkspace UI + CLI with registry/builders (editing, validation).
 - [x] Add unit/integration tests (document rendering/export, registry persistence, template registry CRUD).
+- [ ] Workflow template library (basic templates) (Sprint 7)
 
 ### SchedulerService & Automation
 
-- [ ] Implement SchedulerService (cron parsing, persistence, locking) plus tests.
-- [ ] Integrate SchedulerService with WorkflowRuntime command bus and profiles.
-- [ ] Build CLI scheduling commands (add/list/pause/resume/export).
-- [ ] Implement ActionInvocationService shared by execution console + CLI.
-- [ ] Connect NotificationService + NotificationPreferenceService to schedule alerts/quiet hours.
-- [ ] Add end-to-end tests for scheduled runs and manual action invocation.
+- [x] Implement SchedulerService (basic persistence, hourly placeholder).
+- [x] Build CLI scheduling commands (add/list/pause/resume).
+- [x] Connect NotificationPreferenceService for quiet hours.
+- [ ] Implement cron parsing (replace hourly placeholder). (future)
+- [ ] Integrate SchedulerService with WorkflowRuntime command bus. (future)
+- [ ] Connect NotificationService alerts for scheduled runs. (future)
+- [ ] Add end-to-end tests for scheduled runs. (future)
 
 ### Logging, Telemetry, Backup, Security
 
-- [ ] Implement logging configuration module with runtime hot reload + file/webhook destinations.
-- [ ] Build TelemetryExporter with opt-in gating, anonymization, preview payload tooling.
-- [ ] Create BackupService (create/restore encrypted archives) and integrate with settings/CLI.
-- [ ] Extend MigrationService with pre-backup hook + CLI flows (dry-run, rollback).
-- [ ] Implement InstallationValidator referencing `.cursor/rules/build-installer.mdc`.
-- [ ] Build SecurityScanner wrapper with reporting + notifications.
-- [ ] Write automated tests for logging config changes, telemetry payloads, backup/restore cycles, migration rollback, security scan parsing.
+- [x] Implement LoggingService with structured JSON logging.
+- [x] Build TelemetryService with event queuing.
+- [x] Create BackupService (SQLite snapshot backup/restore) with CLI integration.
+- [x] Build SecurityScanner wrapper with npm audit integration.
+- [x] Write automated tests for logging, backup/restore, security scanning.
+- [ ] Implement logging configuration module with runtime hot reload. (future)
+- [ ] Build TelemetryExporter with opt-in gating, anonymization. (future)
+- [ ] Extend MigrationService with pre-backup hook + CLI flows. (future)
+- [ ] Implement InstallationValidator. (future)
 
 ### Audit & Notification Preferences
 
-- [ ] Define AuditLogService schema and append-only writer.
-- [ ] Expose audit read/tail APIs for UI + CLI.
-- [ ] Instrument all sensitive flows (connectors, templates, backups, exports) to log events.
-- [ ] Implement NotificationPreferenceService (per-user channels, quiet hours) with ConfigService storage.
-- [ ] Wire dashboard/CLI notifications to respect preferences.
-- [ ] Test audit logging (durability, filtering) and preference enforcement (quiet hours).
+- [x] Define AuditLogService schema and append-only writer.
+- [x] Expose audit read/tail APIs for CLI.
+- [x] Instrument sensitive flows (connectors, backups) to log events.
+- [x] Implement NotificationPreferenceService (quiet hours, channels) with ConfigService storage.
+- [ ] Expose audit read/tail APIs for UI. (future)
+- [ ] Wire dashboard notifications to respect preferences. (future)
+- [x] Test audit logging (durability, filtering) and preference enforcement.
 
 ## 6. Leaf Component Implementation Plan
 
@@ -290,18 +320,23 @@ Dependencies: Sprint 1 unblocks SchedulerService + Document builders; Sprint 2 d
 
 | Component                           | Status                                               | Notes / Follow-ups                                                     |
 | ----------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------- |
-| AuditLogService foundation (leaf)   | ✅ Prototype implemented (SQLite writer, CLI viewer) | Extend to cover retention settings + renderer view                     |
+| AuditLogService                     | ✅ Implemented (SQLite writer, CLI viewer)           | Extend to cover retention settings + renderer view                     |
 | AppPaths helper                     | ✅ Ready                                             | Reuse for ConfigService + BackupService path resolution                |
 | TestRunnerService + Test Console UI | ✅ Vitest suites wired, run-all control added        | Expand suites list as new components gain tests, add artifact download |
-| WorkflowRuntime & Draft Service     | 🟢 Core services live                                | Snapshot/publish logic + designer hooks outstanding                    |
-| ConnectorRegistry & CredentialVault | 🟡 Planning                                          | Define abstraction + vault adapters                                    |
-| Document & Template services        | 🟢 Document export path live                         | Next: TemplateRegistry, revision diffs, previews                       |
-| Scheduler/Automation                | 🟡 Planning                                          | Blocked on runtime command bus                                         |
-| Logging/Telemetry/Backup/Security   | 🟡 Planning                                          | Requires ConfigService + Audit hooks                                   |
-| TelemetryExporter skeleton          | 🔜                                                   | After logging configuration module lands                               |
+| WorkflowRuntime & Draft Service     | ✅ Core services live                                | Snapshot/publish logic + designer hooks outstanding                    |
+| Workflow Designer                   | ✅ React Flow-based visual designer                  | Real-time execution monitoring needed (Sprint 7)                       |
+| Workflow Execution                  | ✅ Basic execution with pause/resume                  | Event system for real-time updates needed (Sprint 7)                   |
+| ConnectorRegistry & CredentialVault | ✅ LLM connectors implemented                        | Storage/document connectors planned for future                          |
+| Document & Template services        | ✅ Document export + TemplateRegistry live           | Template export/import with signing planned                            |
+| Scheduler/Automation                | ✅ Basic scheduling implemented                      | Cron parsing + WorkflowRuntime integration needed                      |
+| Logging/Telemetry/Backup/Security   | ✅ Services implemented                              | UI integration for settings/dashboards needed                          |
+| WorkflowEventPublisher              | ❌ Not implemented                                   | Critical for real-time execution monitoring (Sprint 7)                |
+| WorkflowExport/Import               | ❌ Not implemented                                   | Needed for workflow sharing (Sprint 7)                                |
+| Workflow Templates                  | ❌ Not implemented                                   | Basic templates needed for MVP (Sprint 7)                              |
 
-Immediate actions:
+Immediate actions (Sprint 7):
 
-1. Wire designer autosave + scheduler stubs to the new ValidationService/runtime events.
-2. Define TemplateRegistry + revision storage schema and draft migration.
-3. Extend document workspace with previews/links and document export download helpers.
+1. Implement WorkflowEventPublisher for real-time execution updates
+2. Implement WorkflowExport/Import services
+3. Create basic workflow templates
+4. Update documentation to match implementation

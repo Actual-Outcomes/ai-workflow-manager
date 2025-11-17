@@ -55,8 +55,22 @@ describe('SchedulerService', () => {
     })
     const updated = scheduler.list().find((item) => item.id === schedule.id)!
     expect(executions).toEqual([42])
+
+    // Verify lastRunAt is a valid ISO date string in the past
     expect(updated.lastRunAt).toBeTruthy()
-    expect(updated.nextRunAt && updated.nextRunAt > past).toBe(true)
+    expect(typeof updated.lastRunAt).toBe('string')
+    expect(() => new Date(updated.lastRunAt!)).not.toThrow()
+    const lastRunDate = new Date(updated.lastRunAt!)
+    expect(lastRunDate.getTime()).toBeLessThanOrEqual(Date.now())
+    expect(lastRunDate.getTime()).toBeGreaterThan(Date.now() - 5000) // Within last 5 seconds
+
+    // Verify nextRunAt is updated and in the future
+    expect(updated.nextRunAt).toBeTruthy()
+    expect(typeof updated.nextRunAt).toBe('string')
+    expect(() => new Date(updated.nextRunAt!)).not.toThrow()
+    const nextRunDate = new Date(updated.nextRunAt!)
+    expect(nextRunDate.getTime()).toBeGreaterThan(new Date(past).getTime())
+    expect(nextRunDate.getTime()).toBeGreaterThan(Date.now())
     db.close()
     cleanup()
   })

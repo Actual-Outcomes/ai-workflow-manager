@@ -45,16 +45,21 @@ This document captures the initial set of user-facing requirements guiding AI Wo
    - _Scenario_: A support manager creates tailored troubleshooting guides for new product releases.
    - _Flow_: WorkStep node ingests product specs (JSON/YAML) → Loop node iterates Q&A generation until validators confirm coverage → Decision node routes guides by audience (internal vs customer) → Outputs stored as HTML knowledge-base pages and DOCX manuals.
 
+6. **Approval Workflow with Human Review**
+   - _Scenario_: A content team uses AI to draft marketing copy, then presents it to stakeholders for review and approval before publishing.
+   - _Flow_: WorkStep node generates content via LLM → UICard node presents draft with approval/rejection options and comment fields → Decision node routes based on approval status → Approved content triggers document generation, rejected content loops back for revision.
+
 ## Functional Requirements
 
 ### Workflow Authoring & Execution
 
-- Users can create workflows composed of nodes (Decision, WorkStep, Loop, etc.) with entry/exit actions, triggers, and validators.
+- Users can create workflows composed of nodes (Decision, WorkStep, Loop, UICard, etc.) with entry/exit actions, triggers, and validators.
 - Visual editor supports drag-and-drop node placement, connector wiring, property editing, and validation.
 - CLI tooling enables scriptable creation, modification, and execution of workflows.
 - Runtime state machine persists workflow progress, allowing pause/resume and history inspection.
 - Workflows can invoke document-generation actions (DOCX/PDF/HTML) and file mutations (TXT/MD/JSON/YAML/CSV).
 - Nodes can call AI services through pluggable connectors (ChatGPT, Claude) with consistent UI/CLI interfaces.
+- **UI Cards** enable human-in-the-loop workflows by presenting data visually to users and collecting input during execution. Cards support display elements (text, images, tables) and input components (text fields, dropdowns, checkboxes, file uploads) with dynamic data binding from workflow context.
 
 ### Connectors & Integrations
 
@@ -73,6 +78,8 @@ This document captures the initial set of user-facing requirements guiding AI Wo
 
 - Renderer offers dashboards for workflow selection, node execution status, and document previews.
 - Editors provide syntax highlighting, validation, and previews for supported file types; HTML previews display rendered content side-by-side.
+- **UI Card Editor** allows visual design of interactive cards with drag-and-drop layout, display elements, and input components. Cards can bind to workflow variables and present data dynamically during execution.
+- **UI Card Runtime** displays cards to users during workflow execution, collects input, validates responses, and stores results in workflow context for downstream steps.
 - CLI commands mirror UI functionality for headless operation and automation scripts.
 - Notification system surfaces workflow events (trigger fires, validator failures, document creation).
 

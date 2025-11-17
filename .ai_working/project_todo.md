@@ -54,7 +54,7 @@
 - [ ] Add vulnerability remediation workflow (monitor `npm audit`, patch schedule).
 - [ ] Implement centralized logging/telemetry pipeline across main, renderer, and connectors.
 
-## Sprint 4 Kickoff
+## Sprint 4 (Completed)
 
 - [x] Finalize ConfigService schema updates (connectors, vault, diagnostics, retention).
 - [x] Implement ConnectorRegistry interfaces, vault adapters, and health checks.
@@ -62,4 +62,93 @@
 - [x] Build renderer diagnostics/settings panels (logs, telemetry, notifications, schedules).
 - [x] Add TemplateRegistry permissions plus export/import manifest tooling.
 - [x] Implement retention policies + automated cleanup for logs, telemetry, backups, security scans.
-- [ ] Document new CLI flows (connectors, scheduler, retention) and add QA scripts.
+
+## Sprint 5 (Completed)
+
+- [x] Implement LLM Connectors (Claude & ChatGPT) with API integration
+- [x] Add workflow run persistence (workflow_runs, workflow_run_events tables)
+- [x] Enhance WorkflowRuntime with execution logic
+- [x] Implement ActionExecutor service (LLM, Document, Variable, Conditional actions)
+- [x] Add workflow execution UI (Run button, run history)
+- [x] Add workflow execution CLI commands
+- [x] Fix connector initialization and model listing
+
+## Sprint 6 (Completed)
+
+**Focus**: Workflow Authoring & Advanced Execution
+
+### Must Have (MVP)
+- [x] Visual Workflow Designer (basic drag-and-drop)
+- [x] Real-time Execution Monitoring
+- [x] Node Configuration UI
+- [x] Workflow Templates (basic library)
+
+### Should Have
+- [ ] Advanced Triggers & Validators
+- [x] Workflow Import/Export
+- [x] Execution Retry & Error Handling
+
+### Nice to Have
+- [ ] Workflow Versioning UI
+- [x] Enhanced Execution Logging & Debugging
+- [ ] Performance & Quality Improvements
+
+## Sprint 7 (Completed)
+
+**Focus**: Final MVP Sprint - Real-time Monitoring, Sharing, Templates
+
+- [x] Event System & Real-time Execution Monitoring
+- [x] Workflow Export/Import Services
+- [x] Basic Workflow Templates (3 templates)
+- [x] Template Selection UI
+- [x] Export/Import UI Integration
+- [x] Enhanced Execution View
+
+See `docs/sprint-7-plan.md` for detailed plan.
+
+## Product Backlog
+
+### UICard Step Feature
+**Status**: Backlog  
+**Priority**: High  
+**Estimated Effort**: Large (Multi-sprint)
+
+A new node type that enables human-in-the-loop workflows by allowing creators to present data visually and collect user input during workflow execution.
+
+**Key Features**:
+- Visual card designer with drag-and-drop layout
+- Display elements (text, images, tables)
+- Input components (text, dropdowns, checkboxes, file upload, etc.)
+- Dynamic data binding from workflow context
+- Runtime card rendering and submission
+- Data available to downstream workflow steps
+
+**See**: `docs/product-backlog.md` for full Product Requirements Document (PRD)
+
+**Phases**:
+- Phase 1: Core MVP (card node, basic editor, runtime rendering)
+- Phase 2: Enhancements (conditional fields, templates, AI-assisted creation)
+- Phase 3: Enterprise (permissions, versioning, embeddable SDK)
+
+### File System Actions Feature
+**Status**: Backlog  
+**Priority**: Medium  
+**Estimated Effort**: Medium (1-2 sprints)
+
+Workflow actions for common file system operations to enable file management in workflows.
+
+**Key Features**:
+- List files in folder (with pattern matching and recursive search)
+- Move files (with overwrite option)
+- Delete files (with error handling)
+- Rename files (with overwrite option)
+- Variable support for paths
+- Integration with FileSandboxGuard for security
+
+**See**: `docs/product-backlog.md` for full details
+
+**Dependencies**:
+- ✅ FileConnector (exists, needs extension)
+- ❌ FileSandboxGuard (needs implementation)
+- ✅ ActionExecutor (exists, needs extension)
+- ✅ Workflow Designer (exists, needs UI updates)

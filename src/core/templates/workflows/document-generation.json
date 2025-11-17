@@ -1,0 +1,90 @@
+{
+  "name": "Document Generation",
+  "description": "Generate a document using LLM and save it as a file",
+  "category": "Document",
+  "nodes": [
+    {
+      "id": "start-1",
+      "type": "start",
+      "label": "Start",
+      "entryActions": [],
+      "exitActions": [],
+      "metadata": {
+        "position": { "x": 100, "y": 100 }
+      }
+    },
+    {
+      "id": "action-1",
+      "type": "action",
+      "label": "Generate Content",
+      "entryActions": [
+        {
+          "id": "action-1-entry",
+          "type": "llm.chat",
+          "config": {
+            "prompt": "Write a brief summary about AI workflow automation.",
+            "outputVariable": "content"
+          }
+        }
+      ],
+      "exitActions": [],
+      "metadata": {
+        "position": { "x": 300, "y": 100 }
+      }
+    },
+    {
+      "id": "action-2",
+      "type": "action",
+      "label": "Create Document",
+      "entryActions": [
+        {
+          "id": "action-2-entry",
+          "type": "document.generate",
+          "config": {
+            "name": "ai-summary",
+            "format": "markdown",
+            "content": "{{content}}"
+          }
+        }
+      ],
+      "exitActions": [],
+      "metadata": {
+        "position": { "x": 500, "y": 100 }
+      }
+    },
+    {
+      "id": "end-1",
+      "type": "end",
+      "label": "End",
+      "entryActions": [],
+      "exitActions": [],
+      "metadata": {
+        "position": { "x": 700, "y": 100 }
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "source": "start-1",
+      "target": "action-1",
+      "trigger": null,
+      "validators": []
+    },
+    {
+      "id": "t2",
+      "source": "action-1",
+      "target": "action-2",
+      "trigger": null,
+      "validators": []
+    },
+    {
+      "id": "t3",
+      "source": "action-2",
+      "target": "end-1",
+      "trigger": null,
+      "validators": []
+    }
+  ]
+}
+

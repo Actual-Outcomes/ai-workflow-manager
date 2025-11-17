@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
     "dev:vite": "vite",
-    "dev:electron": "wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .",
+    "dev:electron": "npm run rebuild:sqlite:electron && wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .",
     "build": "npm run build:renderer && npm run build:main && npm run build:preload",
     "build:renderer": "vite build",
     "build:main": "tsc -p tsconfig.main.json",
@@ -20,7 +20,9 @@
     "package:mac": "npm run build && electron-builder --mac",
     "cli": "node dist/cli/cli/index.js",
     "postinstall": "electron-builder install-app-deps",
-    "test": "vitest run"
+    "test": "npm run rebuild:sqlite:test && vitest run",
+    "rebuild:sqlite:test": "npm rebuild better-sqlite3 --build-from-source",
+    "rebuild:sqlite:electron": "node scripts/rebuild-sqlite-electron.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",
@@ -28,10 +30,11 @@
     "cron-parser": "^5.0.4",
     "diff": "^5.2.0",
     "docx": "^9.5.1",
-    "keytar": "^7.9.0",
     "electron-updater": "^6.1.7",
+    "keytar": "^7.9.0",
     "openai": "^6.9.0",
-    "pdf-lib": "^1.17.1"
+    "pdf-lib": "^1.17.1",
+    "reactflow": "^11.11.4"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.8",
