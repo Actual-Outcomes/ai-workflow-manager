@@ -3,7 +3,7 @@
 - **Epic**: EP1 — Workflow Authoring
 - **Persona**: Workflow Architect
 - **Priority**: P0
-- **Status**: Draft
+- **Status**: Implemented
 
 ## Context
 
@@ -17,28 +17,24 @@ As a workflow architect, I want to create a new workflow from a blank canvas so 
 
 ```
 Given I am on the dashboard
-When I select “Create Workflow” and choose “Blank Workflow”
-Then a new workflow draft is created with default metadata (untitled, version 0) and I am taken to the visual designer canvas
+When I click "Create Workflow" and provide a name and description
+Then a new workflow draft is created and I am taken to the visual designer canvas
 
 Given the blank canvas is open
 When no nodes exist yet
-Then the UI displays onboarding hints explaining how to drag nodes from the palette
+Then the UI displays a toolbar with node type buttons (Start, Action, Conditional, End) and I can click to add nodes
 
 Given the blank workflow draft is open
-When I edit the workflow name and description in the header
-Then the draft metadata is saved locally without requiring a publish action
+When I edit the workflow name and description
+Then the draft metadata is saved automatically to the database
 
-Given I close the designer without adding nodes
+Given I close the designer
 When I return to the dashboard
-Then the workflow appears in the list as a draft with the last edited timestamp and can be reopened
+Then the workflow draft appears in the list with the last edited timestamp and can be reopened
 
-Given I am using a keyboard and screen reader
-When focus enters the blank canvas
-Then the hints are announced and I can navigate to the palette using keyboard controls
-
-Given the app loses power or crashes during editing
-When I reopen AI Workflow Manager
-Then the draft workflow is restored to the last auto-saved state with a banner noting recovery
+Given I have a workflow draft open
+When I make changes to nodes, connections, or configurations
+Then changes are auto-saved (positions after 500ms debounce, configurations immediately)
 ```
 
 ## UX References

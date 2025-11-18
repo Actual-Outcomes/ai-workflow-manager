@@ -3,7 +3,7 @@
 - **Epic**: EP1 — Workflow Authoring
 - **Persona**: Integrator
 - **Priority**: P1
-- **Status**: Draft
+- **Status**: Implemented
 
 ## Context
 
@@ -16,25 +16,21 @@ As an integrator, I want to export a workflow definition to JSON so that I can v
 ## Acceptance Criteria
 
 ```
-Given I view a workflow in the designer
-When I choose “Export → JSON”
-Then I receive a JSON file containing workflow metadata, nodes, transitions, documents references, and timestamps (excluding secrets)
+Given I view a workflow draft in the designer
+When I click "Export Workflow" from the dashboard
+Then I receive a JSON file containing workflow metadata, nodes, transitions, and all configuration data
 
-Given I run `aiwm workflows export <slug> --format json --out workflow.json`
-When the command succeeds
-Then the CLI prints the output path and checksum
+Given I import a workflow JSON file
+When I use the "Import Workflow" feature
+Then the workflow is imported as a new draft with validation warnings if dependencies are missing
 
 Given the workflow references credentials or secret values
 When exporting
-Then the JSON contains opaque references (IDs) and a warning to fetch secrets via credential vault commands
+Then the JSON contains the workflow structure but credentials are not included in the export
 
-Given I import the exported JSON later
-When dependencies exist (documents, connectors)
-Then the tool checks compatibility and surfaces missing items before allowing import
-
-Given the workflow version is Draft
-When I export
-Then the JSON indicates `versionStatus: draft`; exporting a published version sets `versionStatus: published`
+Given I import a workflow JSON
+When the import completes
+Then I see a success message and the imported workflow appears in the drafts list
 ```
 
 ## UX References

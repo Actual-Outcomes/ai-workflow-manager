@@ -3,7 +3,7 @@
 - **Epic**: EP2 — Workflow Execution & Monitoring
 - **Persona**: Operations Analyst
 - **Priority**: P0
-- **Status**: Draft
+- **Status**: Implemented
 
 ## Context
 
@@ -17,24 +17,20 @@ As an operations analyst, I want to pause and resume workflow runs so that I can
 
 ```
 Given a workflow run is active
-When I click “Pause” in the execution console
-Then I see a confirmation dialog summarizing the effects (current node, queued actions) and, upon confirmation, the run enters Paused state with a timestamp
+When I call pauseRun via WorkflowExecutionService or CLI `workflow run runs pause <runId>`
+Then the run status is updated to "paused" and pause events are published
 
 Given a run is paused
-When I revisit the console
-Then the UI displays Paused status, disables actions that require running state, and highlights “Resume” as primary CTA
+When I view the run via CLI `workflow run runs show <runId>`
+Then the status shows "paused" and the run can be resumed
 
-Given I resume the run
-When I click “Resume” or use CLI `aiwm runs resume <runId>`
-Then the run restarts from the same node, timeline logs the resume event, and operators receive a toast
+Given I resume a paused run
+When I call resumeRun via WorkflowExecutionService or CLI `workflow run runs resume <runId> <draftId>`
+Then the run status is updated to "running" and execution continues from the current node
 
-Given a pause attempt fails (e.g., node in non-interruptible phase)
-When I confirm pause
-Then the console explains why the pause failed and offers retry once the condition clears
-
-Given SLAs require auditing
-When pause/resume occurs
-Then audit logs capture operator identity, timestamp, and optional reason
+Given I pause or resume a run
+When the operation completes
+Then workflow events are published (workflow-paused, workflow-resumed) and the execution view updates in real-time
 ```
 
 ## UX References

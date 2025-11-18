@@ -3,7 +3,7 @@
 - **Epic**: EP3 — Connector & Credential Management
 - **Persona**: Administrator
 - **Priority**: P0
-- **Status**: Draft
+- **Status**: Implemented
 
 ## Context
 

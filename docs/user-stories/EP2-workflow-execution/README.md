@@ -11,20 +11,36 @@ Provide operators with real-time visibility and control over running workflows t
 - Capture run history, logs, and generated artifacts for review.
 - Notify users of failures, validation blocks, or manual action requirements.
 
-## User Stories (Draft)
+## User Stories
 
-| ID        | Title                                        | Persona            | Priority | Status | Architecture Components                                                                                |
-| --------- | -------------------------------------------- | ------------------ | -------- | ------ | ------------------------------------------------------------------------------------------------------ |
-| US-EP2-01 | Launch workflow run from dashboard           | Operations Analyst | P0       | Draft  | Renderer dashboard, RunLaunchService, WorkflowRuntime, CredentialVault                                 |
-| US-EP2-02 | View current node status and timeline        | Operations Analyst | P0       | Draft  | ExecutionConsole UI, WorkflowRuntime, WorkflowEventPublisher, LoggingPipeline                          |
-| US-EP2-03 | Invoke node action from execution console    | Operations Analyst | P0       | Draft  | ExecutionConsole node-actions panel, ActionInvocationService, WorkflowRuntime                          |
-| US-EP2-04 | Trigger node action via CLI command          | Operations Analyst | P0       | Draft  | CLI command surface, ActionInvocationService, WorkflowRuntime, WorkflowEventPublisher                  |
-| US-EP2-05 | Pause and resume workflow run                | Operations Analyst | P0       | Draft  | WorkflowRuntime state machine, RunStateSnapshotService, ExecutionConsole UI, CLI runs commands         |
-| US-EP2-06 | Receive alert when validator fails           | Operations Analyst | P0       | Draft  | ValidationService, NotificationService, Dashboard notifications rail, CLI monitor                      |
-| US-EP2-07 | Download run summary and generated documents | Operations Analyst | P1       | Draft  | DocumentBuilder services, FileConnector, ArtifactsService, ExecutionConsole UI, CLI artifacts commands |
-| US-EP2-08 | Restart workflow from specific node          | Operations Analyst | P1       | Draft  | WorkflowRuntime, RunSnapshotService, ExecutionConsole restart flow, CLI restart command                |
-| US-EP2-09 | Stream structured logs to file/terminal      | Integrator         | P1       | Draft  | WorkflowEventPublisher, Logging/Telemetry pipeline, ExecutionConsole log bar, CLI monitor              |
-| US-EP2-10 | Configure notification preferences           | Operations Analyst | P2       | Draft  | Settings UI (notifications), NotificationPreferenceService, ConfigService, CLI notification commands   |
+| ID        | Title                                        | Persona            | Priority | Status       | Architecture Components                                                                                |
+| --------- | -------------------------------------------- | ------------------ | -------- | ------------ | ------------------------------------------------------------------------------------------------------ |
+| US-EP2-01 | Launch workflow run from dashboard           | Operations Analyst | P0       | ✅ Implemented | WorkflowExecutionService, WorkflowRunRepository, WorkflowEventPublisher, CLI run commands              |
+| US-EP2-02 | View current node status and timeline        | Operations Analyst | P0       | ✅ Implemented | WorkflowExecutionView, WorkflowRunRepository, WorkflowEventPublisher, IPC subscriptions              |
+| US-EP2-03 | Invoke node action from execution console    | Operations Analyst | P0       | Draft        | ExecutionConsole node-actions panel, ActionInvocationService, WorkflowRuntime                          |
+| US-EP2-04 | Trigger node action via CLI command          | Operations Analyst | P0       | Draft        | CLI command surface, ActionInvocationService, WorkflowRuntime, WorkflowEventPublisher                  |
+| US-EP2-05 | Pause and resume workflow run                | Operations Analyst | P0       | ✅ Implemented | WorkflowExecutionService (pauseRun, resumeRun), WorkflowRunRepository, CLI runs commands               |
+| US-EP2-06 | Receive alert when validator fails           | Operations Analyst | P0       | Draft        | ValidationService, NotificationService, Dashboard notifications rail, CLI monitor                      |
+| US-EP2-07 | Download run summary and generated documents | Operations Analyst | P1       | Draft        | DocumentBuilder services, FileConnector, ArtifactsService, ExecutionConsole UI, CLI artifacts commands |
+| US-EP2-08 | Restart workflow from specific node          | Operations Analyst | P1       | Draft        | WorkflowRuntime, RunSnapshotService, ExecutionConsole restart flow, CLI restart command              |
+| US-EP2-09 | Stream structured logs to file/terminal      | Integrator         | P1       | Draft        | WorkflowEventPublisher, Logging/Telemetry pipeline, ExecutionConsole log bar, CLI monitor              |
+| US-EP2-10 | Configure notification preferences           | Operations Analyst | P2       | ✅ Implemented | NotificationPreferenceService, ConfigService, CLI notification commands                                 |
+
+## Implementation Status
+
+**Completed Stories**: 4 of 10 (40%)
+- ✅ Workflow execution service with async execution
+- ✅ Execution console view with real-time event updates
+- ✅ Pause/resume functionality
+- ✅ Notification preferences management
+
+**In Progress / Draft Stories**: 6 of 10 (60%)
+- ⏳ Node action invocation from console (US-EP2-03)
+- ⏳ CLI action commands (US-EP2-04)
+- ⏳ Validator failure alerts (US-EP2-06)
+- ⏳ Run summary and document downloads (US-EP2-07)
+- ⏳ Restart from specific node (US-EP2-08)
+- ⏳ Structured log streaming (US-EP2-09)
 
 ## Dependencies
 

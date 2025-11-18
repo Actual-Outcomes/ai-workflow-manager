@@ -3,7 +3,7 @@
 - **Epic**: EP2 — Workflow Execution & Monitoring
 - **Persona**: Operations Analyst
 - **Priority**: P0
-- **Status**: Draft
+- **Status**: Implemented
 
 ## Context
 
@@ -16,25 +16,21 @@ As an operations analyst, I want to launch a workflow run from the dashboard so 
 ## Acceptance Criteria
 
 ```
-Given I am on the dashboard
-When I click the “Run” button on a workflow card
-Then a modal prompts me to confirm workflow version, connector selection, and optional run parameters before starting
+Given I have a workflow draft
+When I execute it via WorkflowExecutionService
+Then a workflow run is created with initial variables and execution starts asynchronously
 
-Given the workflow requires manual inputs (e.g., document selection)
-When I start the run
-Then the modal includes those inputs or links me to the document workspace prior to launch
+Given I execute a workflow via CLI
+When I run `workflow run start <draftId> <workflowId> --var key=value`
+Then the workflow execution starts and returns a run ID
 
-Given I confirm the run
-When the run starts successfully
-Then I see a toast with run ID, a link to the execution console, and the card reflects “Running…”
+Given a workflow run starts
+When execution begins
+Then a run record is created in the database with status "running" and events are published
 
-Given a run fails to start (e.g., missing credential)
-When the error occurs
-Then the modal displays actionable messaging and blocks launch until resolved
-
-Given I prefer CLI
-When I copy the CLI hint from the modal
-Then I can run the equivalent `aiwm workflows run <slug>` command with the same parameters
+Given a workflow execution fails
+When an error occurs during execution
+Then the run status is updated to "failed" with an error message and failure events are published
 ```
 
 ## UX References

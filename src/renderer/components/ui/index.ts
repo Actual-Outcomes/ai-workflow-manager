@@ -70,4 +70,5 @@ export {
 } from './card'
 export { SectionHeader } from './section-header'
 export type { SectionHeaderProps } from './section-header'
+export { TimePicker } from './time-picker'
 

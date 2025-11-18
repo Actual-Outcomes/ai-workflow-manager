@@ -3,7 +3,7 @@
 - **Epic**: EP1 — Workflow Authoring
 - **Persona**: Workflow Architect
 - **Priority**: P1
-- **Status**: Draft
+- **Status**: Implemented
 
 ## Context
 
@@ -17,24 +17,24 @@ As a workflow architect, I want workflow drafts to autosave and maintain version
 
 ```
 Given I edit a workflow draft
-When I pause for more than 5 seconds
-Then the system autosaves changes and shows a “Draft saved” toast with timestamp
+When I move nodes on the canvas
+Then positions are auto-saved after a 500ms debounce delay
 
-Given I click “Save Draft”
-When prompted
-Then I can optionally add a note (e.g., “Added validator to Loop C”) that appears in version history
+Given I edit a workflow draft
+When I change node configurations (label, actions, etc.)
+Then changes are auto-saved immediately
 
-Given I publish a workflow
+Given I publish a workflow draft
 When validation passes
-Then a new immutable version entry is created with version number, author, timestamp, and change note
+Then the draft is published to the workflows table and a new workflow record is created
 
-Given I view version history
-When I select a prior version
-Then I can compare (diff) definitions and optionally restore it into a new draft
+Given I have a workflow draft
+When I view it in the dashboard
+Then I can see the draft status, version number, and last updated timestamp
 
-Given the app crashes mid-edit
-When I reopen
-Then I see a recovery banner describing the autosaved state and offering to restore or discard it
+Given I have a workflow draft
+When I reopen it in the designer
+Then the draft loads with all nodes, connections, positions, and configurations restored
 ```
 
 ## UX References

@@ -70,6 +70,24 @@ import { ConnectorCard } from './components/composite/connector-card'
 import { DiagnosticCard } from './components/composite/diagnostic-card'
 import { Toaster } from './components/ui/toaster'
 import { useToast } from './components/ui/use-toast'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './components/ui/alert-dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from './components/ui/dialog'
+import { TimePicker } from './components/ui/time-picker'
 
 interface Workflow {
   id: number
@@ -137,6 +155,16 @@ function App() {
   const [telemetryEnabled, setTelemetryEnabledState] = useState(false)
   const [telemetryUpdating, setTelemetryUpdating] = useState(false)
   const [notifications, setNotifications] = useState<NotificationPreferences | null>(null)
+  // Confirmation dialog states
+  const [showDeleteWorkflowConfirm, setShowDeleteWorkflowConfirm] = useState(false)
+  const [workflowToDelete, setWorkflowToDelete] = useState<number | null>(null)
+  const [showDeleteDraftConfirm, setShowDeleteDraftConfirm] = useState(false)
+  const [draftToDelete, setDraftToDelete] = useState<number | null>(null)
+  const [showImportWarningsConfirm, setShowImportWarningsConfirm] = useState(false)
+  const [importWarnings, setImportWarnings] = useState<string[]>([])
+  const [pendingImportDraft, setPendingImportDraft] = useState<any>(null)
+  const [showDeleteScheduleConfirm, setShowDeleteScheduleConfirm] = useState(false)
+  const [scheduleToDelete, setScheduleToDelete] = useState<{ id: number; index: number } | null>(null)
   const [notificationForm, setNotificationForm] = useState({
     quietStart: '',
     quietEnd: '',
@@ -304,14 +332,31 @@ function App() {
     }
   }
 
-  const handleDeleteWorkflow = async (id: number) => {
-    if (confirm('Are you sure you want to delete this workflow?')) {
-      try {
-        await window.electronAPI.deleteWorkflow(id)
-        loadWorkflows()
-      } catch (error) {
-        console.error('Failed to delete workflow:', error)
-      }
+  const handleDeleteWorkflow = (id: number) => {
+    setWorkflowToDelete(id)
+    setShowDeleteWorkflowConfirm(true)
+  }
+
+  const confirmDeleteWorkflow = async () => {
+    if (!workflowToDelete) return
+    try {
+      await window.electronAPI.deleteWorkflow(workflowToDelete)
+      loadWorkflows()
+      toast({
+        variant: 'success',
+        title: 'Deleted',
+        description: 'Workflow deleted successfully.',
+      })
+    } catch (error) {
+      console.error('Failed to delete workflow:', error)
+      toast({
+        variant: 'destructive',
+        title: 'Failed',
+        description: 'Failed to delete workflow.',
+      })
+    } finally {
+      setShowDeleteWorkflowConfirm(false)
+      setWorkflowToDelete(null)
     }
   }
 
@@ -394,8 +439,11 @@ function App() {
           }
 
           if (result.warnings.length > 0) {
-            const proceed = confirm(`Import warnings:\n${result.warnings.join('\n')}\n\nContinue?`)
-            if (!proceed) return
+            // Show confirmation dialog for warnings
+            setImportWarnings(result.warnings)
+            setPendingImportDraft(result.draft)
+            setShowImportWarningsConfirm(true)
+            return
           }
 
           // Create draft from imported workflow
@@ -880,14 +928,22 @@ function App() {
     }
   }
 
-  const handleDeleteDraft = async (id: number) => {
-    if (!confirm('Delete this draft?')) {
-      return
-    }
+  const handleDeleteDraft = (id: number) => {
+    setDraftToDelete(id)
+    setShowDeleteDraftConfirm(true)
+  }
+
+  const confirmDeleteDraft = async () => {
+    if (!draftToDelete) return
     try {
-      setDraftActionId(id)
-      await window.electronAPI.deleteWorkflowDraft(id)
+      setDraftActionId(draftToDelete)
+      await window.electronAPI.deleteWorkflowDraft(draftToDelete)
       await loadDrafts()
+      toast({
+        variant: 'success',
+        title: 'Deleted',
+        description: 'Draft deleted successfully.',
+      })
     } catch (error) {
       console.error('Failed to delete draft:', error)
       toast({
@@ -897,39 +953,105 @@ function App() {
       })
     } finally {
       setDraftActionId(null)
+      setShowDeleteDraftConfirm(false)
+      setDraftToDelete(null)
+    }
+  }
+
+  const confirmDeleteSchedule = async () => {
+    if (!scheduleToDelete) return
+    try {
+      await window.electronAPI.deleteSchedule(scheduleToDelete.id)
+      await refreshSchedules()
+      toast({
+        variant: 'success',
+        title: 'Deleted',
+        description: `Schedule #${scheduleToDelete.index + 1} deleted successfully.`,
+      })
+    } catch (error) {
+      console.error('Failed to delete schedule:', error)
+      toast({
+        variant: 'destructive',
+        title: 'Failed',
+        description: 'Failed to delete schedule.',
+      })
+    } finally {
+      setShowDeleteScheduleConfirm(false)
+      setScheduleToDelete(null)
+    }
+  }
+
+  const confirmImportWithWarnings = async () => {
+    if (!pendingImportDraft) {
+      setShowImportWarningsConfirm(false)
+      return
+    }
+    
+    try {
+      const draft = await window.electronAPI.createWorkflowDraft({
+        name: pendingImportDraft.name,
+        description: pendingImportDraft.description
+      })
+      await window.electronAPI.autosaveWorkflowDraft(draft.id, {
+        nodes: pendingImportDraft.nodes,
+        transitions: pendingImportDraft.transitions
+      })
+      await loadDrafts()
+      toast({
+        variant: 'success',
+        title: 'Import Successful',
+        description: 'Workflow imported successfully! Check the Drafts section.',
+      })
+    } catch (error) {
+      console.error('Failed to import workflow:', error)
+      toast({
+        variant: 'destructive',
+        title: 'Import Failed',
+        description: 'Failed to import workflow.',
+      })
+    } finally {
+      setShowImportWarningsConfirm(false)
+      setImportWarnings([])
+      setPendingImportDraft(null)
     }
   }
 
   const handleSaveDesigner = async (nodes: any[], transitions: any[]) => {
     if (!designingDraftId) return
     
-    try {
-      console.log('Saving draft:', { draftId: designingDraftId, nodes, transitions })
-      await window.electronAPI.autosaveWorkflowDraft(designingDraftId, {
-        nodes: nodes as any,
-        transitions: transitions as any
-      })
-      // Update current draft without reloading all drafts (faster)
-      // Use setTimeout to defer state update and prevent blocking during deletion
-      setTimeout(async () => {
+    // Fire and forget - don't block the UI
+    // Use setTimeout to ensure this runs in the next event loop tick
+    setTimeout(() => {
+      (async () => {
         try {
-          const updated = await window.electronAPI.getWorkflowDraft(designingDraftId)
-          if (updated) {
-            console.log('Draft updated:', updated)
-            setCurrentDraft(updated as any)
-          }
+          console.log('Saving draft:', { draftId: designingDraftId, nodes, transitions })
+          await window.electronAPI.autosaveWorkflowDraft(designingDraftId, {
+            nodes: nodes as any,
+            transitions: transitions as any
+          })
+          // Update current draft without reloading all drafts (faster)
+          // Use setTimeout to defer state update and prevent blocking during deletion
+          setTimeout(async () => {
+            try {
+              const updated = await window.electronAPI.getWorkflowDraft(designingDraftId)
+              if (updated) {
+                console.log('Draft updated:', updated)
+                setCurrentDraft(updated as any)
+              }
+            } catch (error) {
+              console.error('Failed to refresh draft after save:', error)
+            }
+          }, 100)
         } catch (error) {
-          console.error('Failed to refresh draft after save:', error)
+          console.error('Failed to save workflow:', error)
+          toast({
+            variant: 'destructive',
+            title: 'Failed',
+            description: 'Failed to save workflow changes.',
+          })
         }
-      }, 100)
-    } catch (error) {
-      console.error('Failed to save workflow:', error)
-      toast({
-        variant: 'destructive',
-        title: 'Failed',
-        description: 'Failed to save workflow changes.',
-      })
-    }
+      })()
+    }, 0)
   }
 
   // Load draft when opening designer - always reload when draft ID changes
@@ -1378,93 +1500,56 @@ function App() {
               </div>
             )}
 
-            {showTemplateSelection && (
-              <div style={{
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                zIndex: 1000,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '20px'
-              }}>
-                <div style={{
-                  backgroundColor: '#1e1e1e',
-                  borderRadius: '8px',
-                  padding: '30px',
-                  maxWidth: '600px',
-                  width: '100%',
-                  maxHeight: '80vh',
-                  overflowY: 'auto'
-                }}>
-                  <h2 style={{ color: '#fff', marginTop: 0 }}>Select a Template</h2>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '20px' }}>
-                    {workflowTemplates.map((template) => (
-                      <div
-                        key={template.name}
-                        onClick={async () => {
-                          try {
-                            setCreatingDraft(true)
-                            const draft = await window.electronAPI.createWorkflowDraft({
-                              name: template.name,
-                              description: template.description
-                            })
-                            await window.electronAPI.autosaveWorkflowDraft(draft.id, {
-                              nodes: template.nodes,
-                              transitions: template.transitions
-                            })
-                            setShowTemplateSelection(false)
-                            await loadDrafts()
-                            setDesigningDraftId(draft.id)
-                            setCurrentDraft(draft as any)
-                          } catch (error) {
-                            console.error('Failed to create draft from template:', error)
-                            toast({
-                              variant: 'destructive',
-                              title: 'Failed',
-                              description: 'Failed to create draft from template.',
-                            })
-                          } finally {
-                            setCreatingDraft(false)
-                          }
-                        }}
-                        style={{
-                          padding: '15px',
-                          backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          border: '1px solid rgba(255, 255, 255, 0.1)',
-                          transition: 'background-color 0.2s'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'
-                        }}
-                      >
-                        <h3 style={{ color: '#fff', margin: '0 0 5px 0' }}>{template.name}</h3>
-                        <p style={{ color: '#aaa', margin: 0, fontSize: '14px' }}>{template.description}</p>
-                        <span style={{ color: '#666', fontSize: '12px', marginTop: '5px', display: 'block' }}>
-                          Category: {template.category}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  <button
-                    onClick={() => setShowTemplateSelection(false)}
-                    className="btn-secondary"
-                    style={{ marginTop: '20px', width: '100%' }}
-                  >
-                    Cancel
-                  </button>
+            <Dialog open={showTemplateSelection} onOpenChange={setShowTemplateSelection}>
+              <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Select a Template</DialogTitle>
+                  <DialogDescription>
+                    Choose a workflow template to get started quickly
+                  </DialogDescription>
+                </DialogHeader>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '20px' }}>
+                  {workflowTemplates.map((template) => (
+                    <div
+                      key={template.name}
+                      onClick={async () => {
+                        try {
+                          setCreatingDraft(true)
+                          const draft = await window.electronAPI.createWorkflowDraft({
+                            name: template.name,
+                            description: template.description
+                          })
+                          await window.electronAPI.autosaveWorkflowDraft(draft.id, {
+                            nodes: template.nodes,
+                            transitions: template.transitions
+                          })
+                          setShowTemplateSelection(false)
+                          await loadDrafts()
+                          setDesigningDraftId(draft.id)
+                          setCurrentDraft(draft as any)
+                        } catch (error) {
+                          console.error('Failed to create draft from template:', error)
+                          toast({
+                            variant: 'destructive',
+                            title: 'Failed',
+                            description: 'Failed to create draft from template.',
+                          })
+                        } finally {
+                          setCreatingDraft(false)
+                        }
+                      }}
+                      className="cursor-pointer rounded-lg border border-border bg-card p-4 transition-colors hover:bg-accent"
+                    >
+                      <h3 className="text-base font-semibold text-foreground mb-1">{template.name}</h3>
+                      <p className="text-sm text-muted-foreground mb-2">{template.description}</p>
+                      <span className="text-xs text-muted-foreground">
+                        Category: {template.category}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-              </div>
-            )}
+              </DialogContent>
+            </Dialog>
 
             {designingDraftId && currentDraft && (
               <div style={{
@@ -1917,21 +2002,19 @@ function App() {
               ) : (
                 <form className="notification-form" onSubmit={handleNotificationSave}>
                   <div className="form-group inline">
-                    <Label htmlFor="quiet-start">Quiet Start</Label>
-                    <Input
+                    <TimePicker
                       id="quiet-start"
-                      type="time"
+                      label="Quiet Start"
                       value={notificationForm.quietStart}
-                      onChange={(e) => handleNotificationInputChange('quietStart', e.target.value)}
+                      onChange={(value) => handleNotificationInputChange('quietStart', value)}
                     />
                   </div>
                   <div className="form-group inline">
-                    <Label htmlFor="quiet-end">Quiet End</Label>
-                    <Input
+                    <TimePicker
                       id="quiet-end"
-                      type="time"
+                      label="Quiet End"
                       value={notificationForm.quietEnd}
-                      onChange={(e) => handleNotificationInputChange('quietEnd', e.target.value)}
+                      onChange={(value) => handleNotificationInputChange('quietEnd', value)}
                     />
                   </div>
                   <div className="form-group">
@@ -2111,12 +2194,10 @@ function App() {
                                 <Button
                                   variant="destructive"
                                   style={{ fontSize: '12px', padding: '4px 8px' }}
-                                  onClick={async () => {
-                                    if (confirm(`Delete schedule #${index + 1}?`)) {
-                                      await window.electronAPI.deleteSchedule(schedule.id)
-                                      await refreshSchedules()
-                                    }
-                                  }}
+                                  onClick={() => {
+                                      setScheduleToDelete({ id: schedule.id, index })
+                                      setShowDeleteScheduleConfirm(true)
+                                    }}
                                 >
                                   Delete
                                 </Button>
@@ -2253,7 +2334,7 @@ function App() {
                             autoFocus
                           />
                           {connectorApiKey.trim().length > 0 && (
-                            <small style={{ display: 'block', color: connectorError ? '#ef4444' : '#888', marginTop: '0.25rem', fontSize: '0.75rem' }}>
+                            <small className={`block mt-1 text-xs ${connectorError ? 'text-destructive' : 'text-muted-foreground'}`}>
                               {connectorError || (selectedConnectorType === 'claude' 
                                 ? 'Format: sk-ant-... (48+ characters)'
                                 : 'Format: sk-... (48+ characters)')}
@@ -2321,36 +2402,28 @@ function App() {
                   <p>No connectors registered. Click "Add Connector" to get started.</p>
                 </EmptyState>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <div className="flex flex-col gap-3">
                   {connectors.map((connector) => (
                     <div
                       key={connector.id}
-                      style={{
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                        borderRadius: '6px',
-                        padding: '12px',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center'
-                      }}
+                      className="flex justify-between items-center p-3 rounded-lg border border-border bg-card"
                     >
                       <div>
-                        <div style={{ color: '#fff', fontWeight: 500, marginBottom: '4px' }}>
+                        <div className="font-medium text-foreground mb-1">
                           {connector.name}
                         </div>
-                        <div style={{ color: '#aaa', fontSize: '12px' }}>
+                        <div className="text-sm text-muted-foreground">
                           {connector.kind} · {connector.version}
                         </div>
                         {connector.lastHealthCheck && (
-                          <div style={{ color: connector.lastHealthCheck.status === 'healthy' ? '#10b981' : '#ef4444', fontSize: '12px', marginTop: '4px' }}>
+                          <div className={`text-xs mt-1 ${connector.lastHealthCheck.status === 'healthy' ? 'text-green-500' : 'text-destructive'}`}>
                             {connector.lastHealthCheck.status === 'healthy' ? '✓' : '✗'} {connector.lastHealthCheck.message || connector.lastHealthCheck.status}
                           </div>
                         )}
                       </div>
                       <Button
                         variant="destructive"
-                        style={{ fontSize: '12px', padding: '4px 8px' }}
+                        size="sm"
                         onClick={async () => {
                           await window.electronAPI.removeConnector(connector.id)
                           await loadConnectors()
@@ -2440,21 +2513,19 @@ function App() {
                   }}
                 >
                   <div style={{ marginBottom: '1rem' }}>
-                    <Label htmlFor="quietStart">Quiet Hours Start</Label>
-                    <Input
+                    <TimePicker
                       id="quietStart"
-                      type="time"
+                      label="Quiet Hours Start"
                       value={notificationForm.quietStart}
-                      onChange={(e) => setNotificationForm({ ...notificationForm, quietStart: e.target.value })}
+                      onChange={(value) => setNotificationForm({ ...notificationForm, quietStart: value })}
                     />
                   </div>
                   <div style={{ marginBottom: '1rem' }}>
-                    <Label htmlFor="quietEnd">Quiet Hours End</Label>
-                    <Input
+                    <TimePicker
                       id="quietEnd"
-                      type="time"
+                      label="Quiet Hours End"
                       value={notificationForm.quietEnd}
-                      onChange={(e) => setNotificationForm({ ...notificationForm, quietEnd: e.target.value })}
+                      onChange={(value) => setNotificationForm({ ...notificationForm, quietEnd: value })}
                     />
                   </div>
                   <div style={{ marginBottom: '1rem' }}>
@@ -2603,161 +2674,98 @@ function App() {
       </main>
 
       {/* Schedule Form Modal */}
-      {showScheduleForm && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.8)',
-          backdropFilter: 'blur(4px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            background: '#1a1a1a',
-            border: '1px solid #333',
-            borderRadius: '8px',
-            padding: '24px',
-            width: '90%',
-            maxWidth: '600px',
-            maxHeight: '90vh',
-            overflowY: 'auto',
-            color: '#fff'
-          }}>
-            <h2 style={{ margin: '0 0 20px 0', color: '#fff' }}>
-              {editingScheduleId ? 'Edit Schedule' : 'Add Schedule'}
-            </h2>
-            
-            {editingScheduleId && (
-              <div style={{ marginBottom: '20px', padding: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px' }}>
-                <small style={{ color: '#888', fontSize: '12px' }}>Schedule ID: {editingScheduleId}</small>
-              </div>
-            )}
+      <Dialog open={showScheduleForm} onOpenChange={setShowScheduleForm}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingScheduleId ? 'Edit Schedule' : 'Add Schedule'}</DialogTitle>
+            <DialogDescription>
+              {editingScheduleId ? 'Update the schedule configuration' : 'Create a new workflow schedule'}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {editingScheduleId && (
+            <div className="p-2 bg-muted rounded text-xs text-muted-foreground mb-4">
+              Schedule ID: {editingScheduleId}
+            </div>
+          )}
             
             <div style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
-                Workflow
-              </label>
-              <select
+              <Label htmlFor="schedule-workflow">Workflow</Label>
+              <Select
                 value={scheduleForm.workflowId}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, workflowId: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '8px',
-                  background: '#0a0a0a',
-                  border: '1px solid #444',
-                  borderRadius: '4px',
-                  color: '#fff',
-                  fontSize: '14px'
-                }}
+                onValueChange={(value) => setScheduleForm({ ...scheduleForm, workflowId: value })}
                 disabled={!!editingScheduleId}
               >
-                <option value="">Select a workflow...</option>
-                {workflows.map(w => (
-                  <option key={w.id} value={w.id.toString()}>{w.name}</option>
-                ))}
-              </select>
+                <SelectTrigger id="schedule-workflow">
+                  <SelectValue placeholder="Select a workflow..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {workflows.map(w => (
+                    <SelectItem key={w.id} value={w.id.toString()}>{w.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
-                Schedule Pattern
-              </label>
-              <select
+              <Label htmlFor="cron-pattern">Schedule Pattern</Label>
+              <Select
                 value={scheduleForm.cronPattern}
-                onChange={(e) => {
-                  const pattern = e.target.value as typeof scheduleForm.cronPattern
+                onValueChange={(value) => {
+                  const pattern = value as typeof scheduleForm.cronPattern
                   setScheduleForm({ ...scheduleForm, cronPattern: pattern })
                 }}
-                style={{
-                  width: '100%',
-                  padding: '8px',
-                  background: '#0a0a0a',
-                  border: '1px solid #444',
-                  borderRadius: '4px',
-                  color: '#fff',
-                  fontSize: '14px'
-                }}
               >
-                <option value="daily">Daily</option>
-                <option value="weekly">Weekly</option>
-                <option value="monthly">Monthly</option>
-                <option value="hourly">Hourly</option>
-                <option value="custom">Custom Cron Expression</option>
-              </select>
+                <SelectTrigger id="cron-pattern">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="daily">Daily</SelectItem>
+                  <SelectItem value="weekly">Weekly</SelectItem>
+                  <SelectItem value="monthly">Monthly</SelectItem>
+                  <SelectItem value="hourly">Hourly</SelectItem>
+                  <SelectItem value="custom">Custom Cron Expression</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {scheduleForm.cronPattern === 'daily' && (
               <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
-                  Time
-                </label>
-                <input
-                  type="time"
+                <TimePicker
+                  label="Time"
                   value={scheduleForm.dailyTime}
-                  onChange={(e) => setScheduleForm({ ...scheduleForm, dailyTime: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    background: '#0a0a0a',
-                    border: '1px solid #444',
-                    borderRadius: '4px',
-                    color: '#fff',
-                    fontSize: '14px'
-                  }}
+                  onChange={(value) => setScheduleForm({ ...scheduleForm, dailyTime: value })}
                 />
               </div>
             )}
 
             {scheduleForm.cronPattern === 'weekly' && (
               <>
+            <div style={{ marginBottom: '20px' }}>
+              <Label htmlFor="weekly-day">Day of Week</Label>
+              <Select
+                value={scheduleForm.weeklyDay}
+                onValueChange={(value) => setScheduleForm({ ...scheduleForm, weeklyDay: value })}
+              >
+                <SelectTrigger id="weekly-day">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="monday">Monday</SelectItem>
+                  <SelectItem value="tuesday">Tuesday</SelectItem>
+                  <SelectItem value="wednesday">Wednesday</SelectItem>
+                  <SelectItem value="thursday">Thursday</SelectItem>
+                  <SelectItem value="friday">Friday</SelectItem>
+                  <SelectItem value="saturday">Saturday</SelectItem>
+                  <SelectItem value="sunday">Sunday</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
                 <div style={{ marginBottom: '20px' }}>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
-                    Day of Week
-                  </label>
-                  <select
-                    value={scheduleForm.weeklyDay}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, weeklyDay: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '8px',
-                      background: '#0a0a0a',
-                      border: '1px solid #444',
-                      borderRadius: '4px',
-                      color: '#fff',
-                      fontSize: '14px'
-                    }}
-                  >
-                    <option value="monday">Monday</option>
-                    <option value="tuesday">Tuesday</option>
-                    <option value="wednesday">Wednesday</option>
-                    <option value="thursday">Thursday</option>
-                    <option value="friday">Friday</option>
-                    <option value="saturday">Saturday</option>
-                    <option value="sunday">Sunday</option>
-                  </select>
-                </div>
-                <div style={{ marginBottom: '20px' }}>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
-                    Time
-                  </label>
-                  <input
-                    type="time"
+                  <TimePicker
+                    label="Time"
                     value={scheduleForm.weeklyTime}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, weeklyTime: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '8px',
-                      background: '#0a0a0a',
-                      border: '1px solid #444',
-                      borderRadius: '4px',
-                      color: '#fff',
-                      fontSize: '14px'
-                    }}
+                    onChange={(value) => setScheduleForm({ ...scheduleForm, weeklyTime: value })}
                   />
                 </div>
               </>
@@ -2766,43 +2774,21 @@ function App() {
             {scheduleForm.cronPattern === 'monthly' && (
               <>
                 <div style={{ marginBottom: '20px' }}>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
-                    Day of Month (1-31)
-                  </label>
-                  <input
+                  <Label htmlFor="monthly-day">Day of Month (1-31)</Label>
+                  <Input
+                    id="monthly-day"
                     type="number"
                     min="1"
                     max="31"
                     value={scheduleForm.monthlyDay}
                     onChange={(e) => setScheduleForm({ ...scheduleForm, monthlyDay: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '8px',
-                      background: '#0a0a0a',
-                      border: '1px solid #444',
-                      borderRadius: '4px',
-                      color: '#fff',
-                      fontSize: '14px'
-                    }}
                   />
                 </div>
                 <div style={{ marginBottom: '20px' }}>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
-                    Time
-                  </label>
-                  <input
-                    type="time"
+                  <TimePicker
+                    label="Time"
                     value={scheduleForm.monthlyTime}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, monthlyTime: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '8px',
-                      background: '#0a0a0a',
-                      border: '1px solid #444',
-                      borderRadius: '4px',
-                      color: '#fff',
-                      fontSize: '14px'
-                    }}
+                    onChange={(value) => setScheduleForm({ ...scheduleForm, monthlyTime: value })}
                   />
                 </div>
               </>
@@ -2810,50 +2796,30 @@ function App() {
 
             {scheduleForm.cronPattern === 'hourly' && (
               <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
-                  Minute (0-59)
-                </label>
-                <input
+                <Label htmlFor="hourly-minute">Minute (0-59)</Label>
+                <Input
+                  id="hourly-minute"
                   type="number"
                   min="0"
                   max="59"
                   value={scheduleForm.hourlyMinute}
                   onChange={(e) => setScheduleForm({ ...scheduleForm, hourlyMinute: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    background: '#0a0a0a',
-                    border: '1px solid #444',
-                    borderRadius: '4px',
-                    color: '#fff',
-                    fontSize: '14px'
-                  }}
                 />
               </div>
             )}
 
             {scheduleForm.cronPattern === 'custom' && (
               <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
-                  Cron Expression (e.g., "0 9 * * *" for daily at 9 AM)
-                </label>
-                <input
+                <Label htmlFor="custom-cron">Cron Expression (e.g., "0 9 * * *" for daily at 9 AM)</Label>
+                <Input
+                  id="custom-cron"
                   type="text"
                   value={scheduleForm.cron}
                   onChange={(e) => setScheduleForm({ ...scheduleForm, cron: e.target.value })}
                   placeholder="0 9 * * *"
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    background: '#0a0a0a',
-                    border: '1px solid #444',
-                    borderRadius: '4px',
-                    color: '#fff',
-                    fontSize: '14px',
-                    fontFamily: 'monospace'
-                  }}
+                  className="font-mono"
                 />
-                <small style={{ color: '#888', fontSize: '12px', display: 'block', marginTop: '4px' }}>
+                <small className="text-muted-foreground text-xs block mt-1">
                   Format: minute hour day month day-of-week
                 </small>
               </div>
@@ -2861,64 +2827,57 @@ function App() {
 
             {(scheduleForm.cronPattern === 'daily' || scheduleForm.cronPattern === 'weekly' || scheduleForm.cronPattern === 'monthly') && (
               <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
-                  Timezone
-                </label>
-                <select
+                <Label htmlFor="schedule-timezone">Timezone</Label>
+                <Select
                   value={scheduleForm.timezone}
-                  onChange={(e) => setScheduleForm({ ...scheduleForm, timezone: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    background: '#0a0a0a',
-                    border: '1px solid #444',
-                    borderRadius: '4px',
-                    color: '#fff',
-                    fontSize: '14px'
-                  }}
+                  onValueChange={(value) => setScheduleForm({ ...scheduleForm, timezone: value })}
                 >
-                  <option value="UTC">UTC (Coordinated Universal Time)</option>
-                  <option value="America/New_York">America/New_York (Eastern Time)</option>
-                  <option value="America/Chicago">America/Chicago (Central Time)</option>
-                  <option value="America/Denver">America/Denver (Mountain Time)</option>
-                  <option value="America/Los_Angeles">America/Los_Angeles (Pacific Time)</option>
-                  <option value="America/Phoenix">America/Phoenix (Mountain Time - No DST)</option>
-                  <option value="America/Anchorage">America/Anchorage (Alaska Time)</option>
-                  <option value="America/Honolulu">America/Honolulu (Hawaii Time)</option>
-                  <option value="Europe/London">Europe/London (GMT/BST)</option>
-                  <option value="Europe/Paris">Europe/Paris (CET/CEST)</option>
-                  <option value="Europe/Berlin">Europe/Berlin (CET/CEST)</option>
-                  <option value="Europe/Rome">Europe/Rome (CET/CEST)</option>
-                  <option value="Europe/Madrid">Europe/Madrid (CET/CEST)</option>
-                  <option value="Europe/Amsterdam">Europe/Amsterdam (CET/CEST)</option>
-                  <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
-                  <option value="Asia/Shanghai">Asia/Shanghai (CST)</option>
-                  <option value="Asia/Hong_Kong">Asia/Hong_Kong (HKT)</option>
-                  <option value="Asia/Singapore">Asia/Singapore (SGT)</option>
-                  <option value="Asia/Dubai">Asia/Dubai (GST)</option>
-                  <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
-                  <option value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</option>
-                  <option value="Australia/Melbourne">Australia/Melbourne (AEST/AEDT)</option>
-                  <option value="Australia/Brisbane">Australia/Brisbane (AEST)</option>
-                  <option value="Pacific/Auckland">Pacific/Auckland (NZST/NZDT)</option>
-                </select>
+                  <SelectTrigger id="schedule-timezone">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="UTC">UTC (Coordinated Universal Time)</SelectItem>
+                    <SelectItem value="America/New_York">America/New_York (Eastern Time)</SelectItem>
+                    <SelectItem value="America/Chicago">America/Chicago (Central Time)</SelectItem>
+                    <SelectItem value="America/Denver">America/Denver (Mountain Time)</SelectItem>
+                    <SelectItem value="America/Los_Angeles">America/Los_Angeles (Pacific Time)</SelectItem>
+                    <SelectItem value="America/Phoenix">America/Phoenix (Mountain Time - No DST)</SelectItem>
+                    <SelectItem value="America/Anchorage">America/Anchorage (Alaska Time)</SelectItem>
+                    <SelectItem value="America/Honolulu">America/Honolulu (Hawaii Time)</SelectItem>
+                    <SelectItem value="Europe/London">Europe/London (GMT/BST)</SelectItem>
+                    <SelectItem value="Europe/Paris">Europe/Paris (CET/CEST)</SelectItem>
+                    <SelectItem value="Europe/Berlin">Europe/Berlin (CET/CEST)</SelectItem>
+                    <SelectItem value="Europe/Rome">Europe/Rome (CET/CEST)</SelectItem>
+                    <SelectItem value="Europe/Madrid">Europe/Madrid (CET/CEST)</SelectItem>
+                    <SelectItem value="Europe/Amsterdam">Europe/Amsterdam (CET/CEST)</SelectItem>
+                    <SelectItem value="Asia/Tokyo">Asia/Tokyo (JST)</SelectItem>
+                    <SelectItem value="Asia/Shanghai">Asia/Shanghai (CST)</SelectItem>
+                    <SelectItem value="Asia/Hong_Kong">Asia/Hong_Kong (HKT)</SelectItem>
+                    <SelectItem value="Asia/Singapore">Asia/Singapore (SGT)</SelectItem>
+                    <SelectItem value="Asia/Dubai">Asia/Dubai (GST)</SelectItem>
+                    <SelectItem value="Asia/Kolkata">Asia/Kolkata (IST)</SelectItem>
+                    <SelectItem value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</SelectItem>
+                    <SelectItem value="Australia/Melbourne">Australia/Melbourne (AEST/AEDT)</SelectItem>
+                    <SelectItem value="Australia/Brisbane">Australia/Brisbane (AEST)</SelectItem>
+                    <SelectItem value="Pacific/Auckland">Pacific/Auckland (NZST/NZDT)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '24px' }}>
-              <button
-                className="btn-secondary"
-                onClick={() => {
-                  setShowScheduleForm(false)
-                  setEditingScheduleId(null)
-                }}
-                disabled={scheduleSubmitting}
-              >
-                Cancel
-              </button>
-              <button
-                className="btn-primary"
-                onClick={async () => {
+          <div className="flex gap-2 justify-end mt-6">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowScheduleForm(false)
+                setEditingScheduleId(null)
+              }}
+              disabled={scheduleSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
                   if (!scheduleForm.workflowId) {
                     toast({
                       variant: 'warning',
@@ -3001,11 +2960,10 @@ function App() {
                 disabled={scheduleSubmitting || !scheduleForm.workflowId}
               >
                 {scheduleSubmitting ? 'Saving...' : editingScheduleId ? 'Update' : 'Create'}
-              </button>
+              </Button>
             </div>
-          </div>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
 
       {/* Workflow Execution View */}
       {viewingExecution && (
@@ -3016,6 +2974,113 @@ function App() {
           onClose={() => setViewingExecution(null)}
         />
       )}
+
+      {/* Confirmation Dialogs */}
+      <AlertDialog open={showDeleteWorkflowConfirm} onOpenChange={setShowDeleteWorkflowConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Workflow</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this workflow? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                setShowDeleteWorkflowConfirm(false)
+                // Execute delete after dialog closes
+                setTimeout(() => {
+                  confirmDeleteWorkflow()
+                }, 100)
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showDeleteDraftConfirm} onOpenChange={setShowDeleteDraftConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Draft</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this draft? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                setShowDeleteDraftConfirm(false)
+                // Execute delete after dialog closes
+                setTimeout(() => {
+                  confirmDeleteDraft()
+                }, 100)
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showDeleteScheduleConfirm} onOpenChange={setShowDeleteScheduleConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Schedule</AlertDialogTitle>
+            <AlertDialogDescription>
+              {scheduleToDelete && (
+                <>Are you sure you want to delete schedule #{scheduleToDelete.index + 1}? This action cannot be undone.</>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                setShowDeleteScheduleConfirm(false)
+                // Execute delete after dialog closes
+                setTimeout(() => {
+                  confirmDeleteSchedule()
+                }, 100)
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showImportWarningsConfirm} onOpenChange={setShowImportWarningsConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Import Warnings</AlertDialogTitle>
+            <AlertDialogDescription>
+              <div style={{ marginBottom: '12px' }}>
+                The workflow import completed with the following warnings:
+              </div>
+              <ul style={{ marginLeft: '20px', marginBottom: '12px' }}>
+                {importWarnings.map((warning, idx) => (
+                  <li key={idx} style={{ marginBottom: '4px' }}>{warning}</li>
+                ))}
+              </ul>
+              <div>Do you want to continue with the import?</div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setShowImportWarningsConfirm(false)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmImportWithWarnings}>Continue</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

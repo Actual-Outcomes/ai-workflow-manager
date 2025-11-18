@@ -3,7 +3,7 @@
 - **Epic**: EP1 — Workflow Authoring
 - **Persona**: Workflow Architect
 - **Priority**: P0
-- **Status**: Draft
+- **Status**: Implemented
 
 ## Context
 

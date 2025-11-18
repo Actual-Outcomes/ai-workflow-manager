@@ -12,7 +12,8 @@ import ReactFlow, {
   NodeTypes,
   Handle,
   Position,
-  useReactFlow
+  useReactFlow,
+  NodeResizer
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import { WorkflowNode, WorkflowTransition } from '../../core/domain/workflows'
@@ -26,6 +27,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from './ui/alert-dialog'
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+} from './ui/context-menu'
 
 interface WorkflowDesignerProps {
   draftId?: number
@@ -74,6 +83,12 @@ const StartNode = ({ data, selected }: { data: any; selected?: boolean }) => (
     boxShadow: selected ? '0 0 0 2px rgba(59, 130, 246, 0.3), 0 2px 8px rgba(0, 0, 0, 0.3)' : '0 2px 8px rgba(0, 0, 0, 0.3)',
     color: '#3b82f6'
   }}>
+    <NodeResizer
+      color="#3b82f6"
+      isVisible={selected}
+      minWidth={120}
+      minHeight={50}
+    />
     <Handle 
       type="source" 
       position={Position.Bottom} 
@@ -95,6 +110,12 @@ const ActionNode = ({ data, selected }: { data: any; selected?: boolean }) => (
     boxShadow: selected ? '0 0 0 2px rgba(139, 92, 246, 0.3), 0 2px 8px rgba(0, 0, 0, 0.3)' : '0 2px 8px rgba(0, 0, 0, 0.3)',
     color: '#c4b5fd'
   }}>
+    <NodeResizer
+      color="#8b5cf6"
+      isVisible={selected}
+      minWidth={120}
+      minHeight={50}
+    />
     <Handle 
       type="target" 
       position={Position.Top} 
@@ -127,6 +148,15 @@ const ConditionalNode = ({ data, selected }: { data: any; selected?: boolean }) 
     alignItems: 'center',
     justifyContent: 'center'
   }}>
+    <NodeResizer
+      color="#10b981"
+      isVisible={selected}
+      minWidth={80}
+      minHeight={80}
+      maxWidth={200}
+      maxHeight={200}
+      keepAspectRatio={true}
+    />
     <Handle 
       type="target" 
       position={Position.Top} 
@@ -159,6 +189,15 @@ const EndNode = ({ data, selected }: { data: any; selected?: boolean }) => (
     justifyContent: 'center',
     padding: 0
   }}>
+    <NodeResizer
+      color="#ef4444"
+      isVisible={selected}
+      minWidth={60}
+      minHeight={60}
+      maxWidth={150}
+      maxHeight={150}
+      keepAspectRatio={true}
+    />
     <Handle 
       type="target" 
       position={Position.Top} 
@@ -223,10 +262,24 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
   const [isSaving, setIsSaving] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [nodeToDelete, setNodeToDelete] = useState<string | null>(null)
+  const [showDeleteEdgeConfirm, setShowDeleteEdgeConfirm] = useState(false)
+  const [edgeToDelete, setEdgeToDelete] = useState<Edge | null>(null)
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set())
+  const [contextMenuNode, setContextMenuNode] = useState<Node | null>(null)
+  const [contextMenuEdge, setContextMenuEdge] = useState<Edge | null>(null)
+  const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null)
+  const [panelWidth, setPanelWidth] = useState(400) // Default panel width
+  const [isPanelPinned, setIsPanelPinned] = useState(false) // Panel stays open when pinned
+  const [isResizing, setIsResizing] = useState(false)
   const shouldDeleteRef = useRef(false)
   const isDeletingRef = useRef(false)
+  const clipboardRef = useRef<Node | null>(null)
+
   const nodePositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map())
   const reactFlowInstance = useRef<any>(null)
+  const currentSelectionRef = useRef<Set<string>>(new Set())
+  const resizeStartXRef = useRef<number>(0)
+  const resizeStartWidthRef = useRef<number>(400)
 
   // Sync nodes/edges when props change - this is the source of truth
   useEffect(() => {
@@ -252,15 +305,26 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
     // Convert props to ReactFlow format
     if (initialNodes.length > 0 || initialTransitions.length > 0) {
       const newNodes = initialNodes.map((node, index) => {
-        // Load position from metadata if available, otherwise use default
-        const savedPosition = (node.metadata?.position as { x: number; y: number } | undefined) || 
-                              nodePositionsRef.current.get(node.id) ||
+        // Prefer current position from ref (most recent), then metadata, then default
+        // This prevents overwriting positions that were just moved but not yet saved
+        const currentPosition = nodePositionsRef.current.get(node.id)
+        const savedPosition = currentPosition || 
+                              (node.metadata?.position as { x: number; y: number } | undefined) ||
                               { x: 100 + (index % 3) * 250, y: 100 + Math.floor(index / 3) * 150 }
+        
+        // Load dimensions from metadata if available
+        const savedDimensions = (node.metadata?.dimensions as { width: number; height: number } | undefined)
+        
+        // Preserve selection state - check if node is in current selection or matches selectedNodeId
+        const isSelected = currentSelectionRef.current.has(node.id) || node.id === selectedNodeId
         
         return {
           id: node.id,
           type: node.type === 'start' ? 'start' : node.type === 'end' ? 'end' : node.type === 'conditional' ? 'conditional' : 'action',
           position: savedPosition,
+          width: savedDimensions?.width,
+          height: savedDimensions?.height,
+          selected: isSelected, // Preserve selection state
           data: { 
             label: node.label || '', 
             ...node,
@@ -290,16 +354,62 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
       setEdges([])
       nodePositionsRef.current.clear()
     }
-  }, [initialNodes, initialTransitions, setNodes, setEdges])
+  }, [initialNodes, initialTransitions, setNodes, setEdges, selectedNodeId])
 
   // Save node positions when they change (from user dragging)
   useEffect(() => {
+    let hasPositionChanges = false
     flowNodes.forEach(node => {
       if (node.position) {
+        const oldPosition = nodePositionsRef.current.get(node.id)
+        // Check if position actually changed
+        if (!oldPosition || oldPosition.x !== node.position.x || oldPosition.y !== node.position.y) {
+          hasPositionChanges = true
+        }
         nodePositionsRef.current.set(node.id, node.position)
       }
+      // Track current selection
+      if (node.selected) {
+        currentSelectionRef.current.add(node.id)
+      } else {
+        currentSelectionRef.current.delete(node.id)
+      }
     })
-  }, [flowNodes])
+    
+    // Auto-save positions after a short delay (debounced)
+    if (hasPositionChanges && onSave) {
+      const timeoutId = setTimeout(() => {
+        const workflowNodes = flowNodes.map(n => {
+          let nodeType = 'action'
+          if (n.type === 'start') nodeType = 'start'
+          else if (n.type === 'end') nodeType = 'end'
+          else if (n.type === 'conditional') nodeType = 'conditional'
+          else if (n.data?.type) nodeType = n.data.type
+          
+          return {
+            id: n.id,
+            type: nodeType,
+            label: n.data?.label || '',
+            entryActions: n.data?.entryActions || [],
+            exitActions: n.data?.exitActions || [],
+            metadata: {
+              ...(n.data?.metadata || {}),
+              position: n.position, // Save current position in metadata
+              dimensions: n.width && n.height ? { width: n.width, height: n.height } : undefined
+            }
+          }
+        })
+        const workflowTransitions = flowEdges.map(e => ({
+          id: e.id,
+          source: e.source,
+          target: e.target
+        }))
+        onSave(workflowNodes, workflowTransitions)
+      }, 500) // Debounce: save 500ms after last position change
+      
+      return () => clearTimeout(timeoutId)
+    }
+  }, [flowNodes, onSave, flowEdges])
 
   // Highlight selected node
   useEffect(() => {
@@ -347,7 +457,8 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
             exitActions: n.data?.exitActions || [],
             metadata: {
               ...(n.data?.metadata || {}),
-              position: n.position // Save position in metadata
+              position: n.position, // Save position in metadata
+              dimensions: n.width && n.height ? { width: n.width, height: n.height } : undefined // Save dimensions in metadata
             }
           }
         })
@@ -403,83 +514,282 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
     }
   }, [onNodeSelect])
 
+  const onNodeDragStart = useCallback((event: React.MouseEvent, node: Node) => {
+    // Select node when dragging starts
+    if (onNodeSelect) {
+      onNodeSelect(node.id)
+    }
+    // Also update ReactFlow selection state
+    setNodes(nodes => nodes.map(n => ({
+      ...n,
+      selected: n.id === node.id
+    })))
+    setSelectedNodeIds(new Set([node.id]))
+  }, [onNodeSelect, setNodes])
+
+  const onNodeContextMenu = useCallback((event: React.MouseEvent, node: Node) => {
+    event.preventDefault()
+    setContextMenuNode(node)
+    setContextMenuEdge(null)
+    setContextMenuPosition({ x: event.clientX, y: event.clientY })
+  }, [])
+
+  const onEdgeContextMenu = useCallback((event: React.MouseEvent, edge: Edge) => {
+    event.preventDefault()
+    setContextMenuEdge(edge)
+    setContextMenuNode(null)
+    setContextMenuPosition({ x: event.clientX, y: event.clientY })
+  }, [])
+
   const handleDeleteClick = useCallback((nodeId: string) => {
     setNodeToDelete(nodeId)
     setShowDeleteConfirm(true)
   }, [])
 
   const deleteNode = useCallback((nodeId: string) => {
-    console.log('Deleting node:', nodeId)
-    // Set deletion flag to prevent sync conflicts (only for a short time)
+    // Set deletion flag to prevent sync conflicts
     isDeletingRef.current = true
     
-    // Remove the node
+    // Remove the node immediately - update UI first
     const updatedNodes = flowNodes.filter(n => n.id !== nodeId)
-    setNodes(updatedNodes)
-    // Remove any edges connected to this node
     const updatedEdges = flowEdges.filter(e => e.source !== nodeId && e.target !== nodeId)
+    
+    // Update state immediately for responsive UI
+    setNodes(updatedNodes)
     setEdges(updatedEdges)
-    // Deselect
     onNodeSelect?.(null)
     
-    // Clear deletion flag after a short delay to allow UI to update
-    // This flag only prevents sync, not other operations
+    // Clear deletion flag after UI updates
     setTimeout(() => {
       isDeletingRef.current = false
-      console.log('Deletion flag cleared')
-    }, 300)
+    }, 500)
     
-    // Auto-save (non-blocking to prevent UI freeze)
+    // Auto-save - completely fire and forget, no blocking
     if (onSave) {
-      const workflowNodes = updatedNodes.map(n => {
-        let nodeType = 'action'
-        if (n.type === 'start') nodeType = 'start'
-        else if (n.type === 'end') nodeType = 'end'
-        else if (n.type === 'conditional') nodeType = 'conditional'
-        else if (n.data?.type) nodeType = n.data.type
-        
-        return {
-          id: n.id,
-          type: nodeType,
-          label: n.data?.label || '',
-          entryActions: n.data?.entryActions || [],
-          exitActions: n.data?.exitActions || [],
-          metadata: {
-            ...(n.data?.metadata || {}),
-            position: n.position
+      // Use a longer delay to ensure UI is fully updated and responsive
+      setTimeout(() => {
+        const workflowNodes = updatedNodes.map(n => {
+          let nodeType = 'action'
+          if (n.type === 'start') nodeType = 'start'
+          else if (n.type === 'end') nodeType = 'end'
+          else if (n.type === 'conditional') nodeType = 'conditional'
+          else if (n.data?.type) nodeType = n.data.type
+          
+          return {
+            id: n.id,
+            type: nodeType,
+            label: n.data?.label || '',
+            entryActions: n.data?.entryActions || [],
+            exitActions: n.data?.exitActions || [],
+            metadata: {
+              ...(n.data?.metadata || {}),
+              position: n.position
+            }
           }
-        }
-      })
-      const workflowTransitions = updatedEdges.map(e => ({
-        id: e.id,
-        source: e.source,
-        target: e.target
-      }))
-      // Fire and forget - don't await to prevent blocking
-      Promise.resolve(onSave(workflowNodes, workflowTransitions))
-        .catch((error) => {
-          console.error('Failed to save after node deletion:', error)
         })
+        const workflowTransitions = updatedEdges.map(e => ({
+          id: e.id,
+          source: e.source,
+          target: e.target
+        }))
+        
+        // Fire and forget - wrap in Promise to ensure it doesn't block
+        // Don't await, don't catch synchronously
+        const savePromise = onSave(workflowNodes, workflowTransitions)
+        if (savePromise && typeof savePromise.then === 'function') {
+          savePromise.catch((error) => {
+            console.error('Failed to save after node deletion:', error)
+          })
+        }
+      }, 200) // Longer delay to ensure UI is responsive
     }
   }, [flowNodes, flowEdges, onSave, onNodeSelect, setNodes, setEdges])
 
-  // Handle keyboard delete
+  // Handle selection changes from React Flow
+  const onSelectionChange = useCallback((params: { nodes: Node[]; edges: Edge[] }) => {
+    const selectedIds = new Set(params.nodes.map(n => n.id))
+    setSelectedNodeIds(selectedIds)
+    
+    // Update single selection for property panel (use first selected or null)
+    if (params.nodes.length === 1) {
+      onNodeSelect?.(params.nodes[0].id)
+    } else if (params.nodes.length === 0) {
+      onNodeSelect?.(null)
+    }
+    // If multiple selected, keep the first one selected for property panel
+    // (or we could show a "multiple selected" message)
+  }, [onNodeSelect])
+
+  // Get node dimensions based on type (matching our node component styles)
+  const getNodeDimensions = useCallback((node: Node): { width: number; height: number } => {
+    if (node.type === 'conditional') {
+      return { width: 100, height: 100 } // Square
+    } else if (node.type === 'end') {
+      return { width: 90, height: 90 } // Circle
+    } else {
+      return { width: 140, height: 60 } // Default rectangular nodes
+    }
+  }, [])
+
+  // Alignment functions
+  const alignNodes = useCallback((alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => {
+    if (selectedNodeIds.size < 2) return
+
+    const selectedNodes = flowNodes.filter(n => selectedNodeIds.has(n.id))
+    if (selectedNodes.length < 2) return
+
+    let updatedNodes: Node[]
+
+    if (alignment === 'left') {
+      const leftmostX = Math.min(...selectedNodes.map(n => n.position.x))
+      updatedNodes = flowNodes.map(n => 
+        selectedNodeIds.has(n.id) 
+          ? { ...n, position: { ...n.position, x: leftmostX } }
+          : n
+      )
+    } else if (alignment === 'right') {
+      // Calculate rightmost edge considering node widths
+      const rightmostX = Math.max(...selectedNodes.map(n => {
+        const dims = getNodeDimensions(n)
+        return n.position.x + dims.width
+      }))
+      updatedNodes = flowNodes.map(n => {
+        if (!selectedNodeIds.has(n.id)) return n
+        const dims = getNodeDimensions(n)
+        return { ...n, position: { ...n.position, x: rightmostX - dims.width } }
+      })
+    } else if (alignment === 'center') {
+      // Calculate center based on bounding box of all selected nodes
+      const minX = Math.min(...selectedNodes.map(n => n.position.x))
+      const maxX = Math.max(...selectedNodes.map(n => {
+        const dims = getNodeDimensions(n)
+        return n.position.x + dims.width
+      }))
+      const centerX = (minX + maxX) / 2
+      updatedNodes = flowNodes.map(n => {
+        if (!selectedNodeIds.has(n.id)) return n
+        const dims = getNodeDimensions(n)
+        return { ...n, position: { ...n.position, x: centerX - (dims.width / 2) } }
+      })
+    } else if (alignment === 'top') {
+      const topmostY = Math.min(...selectedNodes.map(n => n.position.y))
+      updatedNodes = flowNodes.map(n => 
+        selectedNodeIds.has(n.id) 
+          ? { ...n, position: { ...n.position, y: topmostY } }
+          : n
+      )
+    } else if (alignment === 'bottom') {
+      // Calculate bottommost edge considering node heights
+      const bottommostY = Math.max(...selectedNodes.map(n => {
+        const dims = getNodeDimensions(n)
+        return n.position.y + dims.height
+      }))
+      updatedNodes = flowNodes.map(n => {
+        if (!selectedNodeIds.has(n.id)) return n
+        const dims = getNodeDimensions(n)
+        return { ...n, position: { ...n.position, y: bottommostY - dims.height } }
+      })
+    } else if (alignment === 'middle') {
+      // Calculate middle based on bounding box of all selected nodes
+      const minY = Math.min(...selectedNodes.map(n => n.position.y))
+      const maxY = Math.max(...selectedNodes.map(n => {
+        const dims = getNodeDimensions(n)
+        return n.position.y + dims.height
+      }))
+      const middleY = (minY + maxY) / 2
+      updatedNodes = flowNodes.map(n => {
+        if (!selectedNodeIds.has(n.id)) return n
+        const dims = getNodeDimensions(n)
+        return { ...n, position: { ...n.position, y: middleY - (dims.height / 2) } }
+      })
+    } else {
+      return
+    }
+
+    setNodes(updatedNodes)
+
+    // Auto-save after alignment
+    if (onSave) {
+      setTimeout(() => {
+        const workflowNodes = updatedNodes.map(n => {
+          let nodeType = 'action'
+          if (n.type === 'start') nodeType = 'start'
+          else if (n.type === 'end') nodeType = 'end'
+          else if (n.type === 'conditional') nodeType = 'conditional'
+          else if (n.data?.type) nodeType = n.data.type
+          
+          return {
+            id: n.id,
+            type: nodeType,
+            label: n.data?.label || '',
+            entryActions: n.data?.entryActions || [],
+            exitActions: n.data?.exitActions || [],
+            metadata: {
+              ...(n.data?.metadata || {}),
+              position: n.position
+            }
+          }
+        })
+        const workflowTransitions = flowEdges.map(e => ({
+          id: e.id,
+          source: e.source,
+          target: e.target
+        }))
+        onSave(workflowNodes, workflowTransitions)
+      }, 200)
+    }
+  }, [selectedNodeIds, flowNodes, flowEdges, onSave, setNodes])
+
+  // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Don't trigger delete if user is typing in an input field
+      // Don't trigger shortcuts if user is typing in an input field
       const target = event.target as HTMLElement
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
         return
       }
       
-      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedNodeId) {
+      // Select All (Ctrl/Cmd + A)
+      if ((event.ctrlKey || event.metaKey) && event.key === 'a') {
         event.preventDefault()
-        handleDeleteClick(selectedNodeId)
+        const allNodeIds = flowNodes.map(n => n.id)
+        setNodes(nodes => nodes.map(n => ({ ...n, selected: true })))
+        setSelectedNodeIds(new Set(allNodeIds))
+        return
+      }
+      
+      // Escape - Deselect all
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setNodes(nodes => nodes.map(n => ({ ...n, selected: false })))
+        setSelectedNodeIds(new Set())
+        onNodeSelect?.(null)
+        return
+      }
+      
+      // Delete/Backspace - Delete selected nodes
+      if ((event.key === 'Delete' || event.key === 'Backspace')) {
+        if (selectedNodeIds.size > 0) {
+          event.preventDefault()
+          // Delete all selected nodes (show confirmation for multiple)
+          if (selectedNodeIds.size === 1) {
+            const nodeId = Array.from(selectedNodeIds)[0]
+            handleDeleteClick(nodeId)
+          } else {
+            // For multiple selection, delete the first one for now
+            // TODO: Show confirmation dialog for multiple deletion
+            const nodeId = Array.from(selectedNodeIds)[0]
+            handleDeleteClick(nodeId)
+          }
+        } else if (selectedNodeId) {
+          event.preventDefault()
+          handleDeleteClick(selectedNodeId)
+        }
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedNodeId, handleDeleteClick])
+  }, [selectedNodeId, selectedNodeIds, handleDeleteClick, flowNodes, setNodes, onNodeSelect])
 
   const addNode = useCallback((type: string) => {
     const newNodeId = `node-${Date.now()}`
@@ -560,43 +870,86 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
   }, [])
   
   const onEdgeDoubleClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
-    // Delete edge on double-click
-    if (confirm(`Delete connection from ${edge.source} to ${edge.target}?`)) {
-      setEdges((eds) => eds.filter((e) => e.id !== edge.id))
-      // Auto-save
-      if (onSave) {
-        const workflowNodes = flowNodes.map(n => {
-          let nodeType = 'action'
-          if (n.type === 'start') nodeType = 'start'
-          else if (n.type === 'end') nodeType = 'end'
-          else if (n.type === 'conditional') nodeType = 'conditional'
-          else if (n.data?.type) nodeType = n.data.type
-          
-          return {
-            id: n.id,
-            type: nodeType,
-            label: n.data?.label || '',
-            entryActions: n.data?.entryActions || [],
-            exitActions: n.data?.exitActions || [],
-            metadata: {
-              ...(n.data?.metadata || {}),
-              position: n.position
-            }
+    // Show confirmation dialog for edge deletion
+    setEdgeToDelete(edge)
+    setShowDeleteEdgeConfirm(true)
+  }, [])
+
+  const confirmDeleteEdge = useCallback(() => {
+    if (!edgeToDelete) return
+    
+    const updatedEdges = flowEdges.filter((e) => e.id !== edgeToDelete.id)
+    setEdges(updatedEdges)
+    
+    // Auto-save
+    if (onSave) {
+      const workflowNodes = flowNodes.map(n => {
+        let nodeType = 'action'
+        if (n.type === 'start') nodeType = 'start'
+        else if (n.type === 'end') nodeType = 'end'
+        else if (n.type === 'conditional') nodeType = 'conditional'
+        else if (n.data?.type) nodeType = n.data.type
+        
+        return {
+          id: n.id,
+          type: nodeType,
+          label: n.data?.label || '',
+          entryActions: n.data?.entryActions || [],
+          exitActions: n.data?.exitActions || [],
+          metadata: {
+            ...(n.data?.metadata || {}),
+            position: n.position
           }
-        })
-        const updatedEdges = flowEdges.filter((e) => e.id !== edge.id)
-        const workflowTransitions = updatedEdges.map(e => ({
-          id: e.id,
-          source: e.source,
-          target: e.target
-        }))
-        onSave(workflowNodes, workflowTransitions)
-      }
+        }
+      })
+      const workflowTransitions = updatedEdges.map(e => ({
+        id: e.id,
+        source: e.source,
+        target: e.target
+      }))
+      onSave(workflowNodes, workflowTransitions)
     }
-  }, [flowNodes, flowEdges, onSave, setEdges])
+    
+    setShowDeleteEdgeConfirm(false)
+    setEdgeToDelete(null)
+  }, [edgeToDelete, flowNodes, flowEdges, onSave, setEdges])
 
   const selectedNode = selectedNodeId ? flowNodes.find(n => n.id === selectedNodeId) : null
   const selectedWorkflowNode = selectedNodeId ? initialNodes.find(n => n.id === selectedNodeId) : null
+  
+  // Determine if panel should be visible
+  const isPanelVisible = isPanelPinned || (selectedNode && selectedWorkflowNode)
+  
+  // Resize handlers
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsResizing(true)
+    resizeStartXRef.current = e.clientX
+    resizeStartWidthRef.current = panelWidth
+  }, [panelWidth])
+  
+  useEffect(() => {
+    if (!isResizing) return
+    
+    const handleMouseMove = (e: MouseEvent) => {
+      const deltaX = resizeStartXRef.current - e.clientX // Inverted because we're resizing from the left
+      const newWidth = Math.max(250, Math.min(800, resizeStartWidthRef.current + deltaX))
+      setPanelWidth(newWidth)
+    }
+    
+    const handleMouseUp = () => {
+      setIsResizing(false)
+    }
+    
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isResizing])
 
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -665,28 +1018,147 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
         >
           + End
         </button>
-        <div style={{ flex: 1 }} />
-        <button
-          onClick={handleSave}
-          disabled={isSaving}
-          style={{
-            padding: '8px 16px',
-            background: isSaving ? '#666' : '#10b981',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: isSaving ? 'not-allowed' : 'pointer',
-            fontSize: '14px'
-          }}
-        >
-          {isSaving ? 'Saving...' : 'Save'}
-        </button>
+        {selectedNodeIds.size > 1 && (
+          <>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '0 12px',
+              background: '#2a2a2a',
+              borderRadius: '4px',
+              fontSize: '14px',
+              color: '#ccc'
+            }}>
+              <span>{selectedNodeIds.size} selected</span>
+            </div>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '4px',
+              background: '#2a2a2a',
+              borderRadius: '4px',
+              border: '1px solid #444'
+            }}>
+              {/* Horizontal Alignment */}
+              <button
+                onClick={() => alignNodes('left')}
+                title="Align Left"
+                style={{
+                  padding: '4px 8px',
+                  background: 'transparent',
+                  color: '#ccc',
+                  border: 'none',
+                  borderRadius: '2px',
+                  cursor: 'pointer',
+                  fontSize: '12px'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.background = '#3a3a3a'}
+                onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
+              >
+                ⬅
+              </button>
+              <button
+                onClick={() => alignNodes('center')}
+                title="Align Center (Horizontal)"
+                style={{
+                  padding: '4px 8px',
+                  background: 'transparent',
+                  color: '#ccc',
+                  border: 'none',
+                  borderRadius: '2px',
+                  cursor: 'pointer',
+                  fontSize: '12px'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.background = '#3a3a3a'}
+                onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
+              >
+                ↔
+              </button>
+              <button
+                onClick={() => alignNodes('right')}
+                title="Align Right"
+                style={{
+                  padding: '4px 8px',
+                  background: 'transparent',
+                  color: '#ccc',
+                  border: 'none',
+                  borderRadius: '2px',
+                  cursor: 'pointer',
+                  fontSize: '12px'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.background = '#3a3a3a'}
+                onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
+              >
+                ➡
+              </button>
+              <div style={{ width: '1px', height: '16px', background: '#444', margin: '0 4px' }} />
+              {/* Vertical Alignment */}
+              <button
+                onClick={() => alignNodes('top')}
+                title="Align Top"
+                style={{
+                  padding: '4px 8px',
+                  background: 'transparent',
+                  color: '#ccc',
+                  border: 'none',
+                  borderRadius: '2px',
+                  cursor: 'pointer',
+                  fontSize: '12px'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.background = '#3a3a3a'}
+                onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
+              >
+                ⬆
+              </button>
+              <button
+                onClick={() => alignNodes('middle')}
+                title="Align Middle (Vertical)"
+                style={{
+                  padding: '4px 8px',
+                  background: 'transparent',
+                  color: '#ccc',
+                  border: 'none',
+                  borderRadius: '2px',
+                  cursor: 'pointer',
+                  fontSize: '12px'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.background = '#3a3a3a'}
+                onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
+              >
+                ↕
+              </button>
+              <button
+                onClick={() => alignNodes('bottom')}
+                title="Align Bottom"
+                style={{
+                  padding: '4px 8px',
+                  background: 'transparent',
+                  color: '#ccc',
+                  border: 'none',
+                  borderRadius: '2px',
+                  cursor: 'pointer',
+                  fontSize: '12px'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.background = '#3a3a3a'}
+                onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
+              >
+                ⬇
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Main Content Area */}
-      <div style={{ flex: 1, display: 'flex', background: '#0f0f0f' }}>
+      <div style={{ flex: 1, display: 'flex', background: '#0f0f0f', position: 'relative' }}>
         {/* React Flow Canvas */}
-        <div style={{ flex: selectedNode ? '0 0 70%' : '1', background: '#0f0f0f' }}>
+        <div style={{ 
+          flex: isPanelVisible ? `0 0 calc(100% - ${panelWidth}px)` : '1', 
+          background: '#0f0f0f',
+          transition: isResizing ? 'none' : 'flex 0.2s ease'
+        }}>
           <ReactFlow
             nodes={flowNodes}
             edges={flowEdges}
@@ -694,16 +1166,28 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodeClick={onNodeClick}
+            onNodeDragStart={onNodeDragStart}
+            onNodeContextMenu={onNodeContextMenu}
             onEdgeClick={onEdgeClick}
+            onEdgeContextMenu={onEdgeContextMenu}
             onEdgeDoubleClick={onEdgeDoubleClick}
-            onPaneClick={() => onNodeSelect?.(null)}
+            onPaneClick={() => {
+              setSelectedNodeIds(new Set())
+              onNodeSelect?.(null)
+            }}
+            onPaneContextMenu={(e) => {
+              // Close context menu if right-clicking on empty canvas
+              setContextMenuNode(null)
+              setContextMenuEdge(null)
+              setContextMenuPosition(null)
+            }}
+            onSelectionChange={onSelectionChange}
             onInit={onInit}
             nodeTypes={nodeTypes}
             fitView
             edgesUpdatable={true}
             edgesFocusable={true}
-            edgesDeletable={true}
-            deleteKeyCode={['Delete', 'Backspace']}
+            deleteKeyCode={null}
             nodesDraggable={true}
             nodesConnectable={true}
             selectNodesOnDrag={false}
@@ -717,44 +1201,140 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
         </div>
 
         {/* Property Panel */}
-        {selectedNode && selectedWorkflowNode && (
+        {isPanelVisible && (
           <div style={{
-            width: '30%',
+            width: `${panelWidth}px`,
             background: '#1a1a1a',
             borderLeft: '1px solid #333',
-            padding: '20px',
-            overflowY: 'auto',
-            color: '#fff'
+            display: 'flex',
+            flexDirection: 'column',
+            position: 'relative',
+            transition: isResizing ? 'none' : 'width 0.2s ease'
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, color: '#fff' }}>
-                Configure: {selectedWorkflowNode.label || selectedNode.id}
-              </h3>
-              <button
-                onClick={() => handleDeleteClick(selectedNode.id)}
-                style={{
-                  padding: '6px 12px',
-                  background: '#ef4444',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                  transition: 'all 0.2s ease'
-                }}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.background = '#dc2626'
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.background = '#ef4444'
-                }}
-                title="Delete node (or press Delete/Backspace)"
-              >
-                Delete
-              </button>
-            </div>
-
-            {/* Node Label */}
+            {/* Resize Handle */}
+            <div
+              onMouseDown={handleResizeStart}
+              style={{
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: '4px',
+                cursor: 'ew-resize',
+                background: isResizing ? '#3b82f6' : 'transparent',
+                zIndex: 10,
+                transition: 'background 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                if (!isResizing) {
+                  e.currentTarget.style.background = '#3b82f6'
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isResizing) {
+                  e.currentTarget.style.background = 'transparent'
+                }
+              }}
+              title="Drag to resize"
+            />
+            
+            {/* Panel Content */}
+            <div style={{
+              flex: 1,
+              padding: '20px',
+              overflowY: 'auto',
+              color: '#fff',
+              display: 'flex',
+              flexDirection: 'column'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h3 style={{ margin: 0, color: '#fff' }}>
+                  {selectedNode && selectedWorkflowNode 
+                    ? `Configure: ${selectedWorkflowNode.label || selectedNode.id}`
+                    : 'Properties'
+                  }
+                </h3>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setIsPanelPinned(!isPanelPinned)
+                    }}
+                    style={{
+                      padding: '4px 8px',
+                      background: isPanelPinned ? '#3b82f6' : 'transparent',
+                      color: isPanelPinned ? '#fff' : '#ccc',
+                      border: '1px solid',
+                      borderColor: isPanelPinned ? '#3b82f6' : '#555',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      transition: 'all 0.2s ease',
+                      width: '24px',
+                      height: '24px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                    onMouseOver={(e) => {
+                      if (!isPanelPinned) {
+                        e.currentTarget.style.background = '#3a3a3a'
+                        e.currentTarget.style.borderColor = '#666'
+                      }
+                    }}
+                    onMouseOut={(e) => {
+                      if (!isPanelPinned) {
+                        e.currentTarget.style.background = 'transparent'
+                        e.currentTarget.style.borderColor = '#555'
+                      }
+                    }}
+                    title={isPanelPinned ? 'Unpin panel' : 'Pin panel'}
+                  >
+                    📌
+                  </button>
+                  {!isPanelPinned && (
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        onNodeSelect?.(null)
+                      }}
+                      style={{
+                        padding: '4px 8px',
+                        background: 'transparent',
+                        color: '#ccc',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '18px',
+                        lineHeight: '1',
+                        transition: 'all 0.2s ease',
+                        width: '24px',
+                        height: '24px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                      onMouseOver={(e) => {
+                        e.currentTarget.style.background = '#3a3a3a'
+                        e.currentTarget.style.color = '#fff'
+                      }}
+                      onMouseOut={(e) => {
+                        e.currentTarget.style.background = 'transparent'
+                        e.currentTarget.style.color = '#ccc'
+                      }}
+                      title="Close panel"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              </div>
+              
+              {selectedNode && selectedWorkflowNode ? (
+                <>
+                  {/* Node Label */}
             <div style={{ marginBottom: '20px' }}>
               <label style={{ display: 'block', marginBottom: '8px', color: '#ccc', fontSize: '14px' }}>
                 Node Label
@@ -835,6 +1415,7 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
                       n.id === selectedNode.id 
                         ? { 
                             ...n, 
+                            selected: n.selected, // Preserve selection state
                             data: { 
                               ...n.data, 
                               entryActions: [newAction],
@@ -1349,67 +1930,136 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
             )}
 
             <button
-              onClick={() => {
-                // Trigger save when closing panel
-                handleSave()
-                onNodeSelect?.(null)
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                handleDeleteClick(selectedNode.id)
               }}
               style={{
                 width: '100%',
                 padding: '10px',
-                background: '#10b981',
+                background: '#ef4444',
                 color: 'white',
                 border: 'none',
                 borderRadius: '4px',
                 cursor: 'pointer',
                 fontSize: '14px',
-                marginTop: '20px'
+                marginTop: '20px',
+                transition: 'all 0.2s ease'
               }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.background = '#dc2626'
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.background = '#ef4444'
+              }}
+              title="Delete node (or press Delete/Backspace)"
             >
-              Save & Close
+              Delete Node
             </button>
+                </>
+              ) : (
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  flex: 1,
+                  color: '#888',
+                  fontSize: '14px'
+                }}>
+                  No node selected
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
 
-      {/* Confirmation Modal */}
-      <AlertDialog 
-        open={showDeleteConfirm} 
-        onOpenChange={(open) => {
-          if (!open) {
-            // Dialog is closing
-            const nodeIdToDelete = nodeToDelete
-            const shouldDelete = shouldDeleteRef.current
-            setShowDeleteConfirm(false)
-            setNodeToDelete(null)
-            shouldDeleteRef.current = false
-            
-            // Wait for dialog animation to complete
-            setTimeout(() => {
-              if (shouldDelete && nodeIdToDelete) {
-                // User clicked Delete - perform deletion
-                deleteNode(nodeIdToDelete)
-              } else {
-                // User clicked Cancel - ensure deletion flag is cleared
-                isDeletingRef.current = false
-              }
-            }, 200)
-          }
-        }}
-      >
+      {/* Confirmation Modal - Always render, control visibility with open prop */}
+      {showDeleteConfirm && (
+        <AlertDialog 
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) {
+              // User clicked outside or pressed Escape - just cancel
+              setShowDeleteConfirm(false)
+              setNodeToDelete(null)
+              shouldDeleteRef.current = false
+              isDeletingRef.current = false
+            }
+          }}
+        >
+          <AlertDialogContent style={{ zIndex: 9999 }}>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Node</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete "{nodeToDelete && selectedNode && selectedWorkflowNode ? (selectedWorkflowNode.label || selectedNode.id) : nodeToDelete || 'this node'}"? This will also remove all connections to this node.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel
+                onClick={() => {
+                  setShowDeleteConfirm(false)
+                  setNodeToDelete(null)
+                }}
+              >
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  if (nodeToDelete) {
+                    const nodeId = nodeToDelete
+                    // Close dialog immediately
+                    setShowDeleteConfirm(false)
+                    setNodeToDelete(null)
+                    
+                    // Delete after dialog animation completes
+                    // Use requestAnimationFrame to ensure dialog closes first
+                    requestAnimationFrame(() => {
+                      setTimeout(() => {
+                        deleteNode(nodeId)
+                      }, 150)
+                    })
+                  }
+                }}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {/* Edge Deletion Confirmation */}
+      <AlertDialog open={showDeleteEdgeConfirm} onOpenChange={(open) => {
+        if (!open) {
+          setShowDeleteEdgeConfirm(false)
+          setEdgeToDelete(null)
+        }
+      }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Node</AlertDialogTitle>
+            <AlertDialogTitle>Delete Connection</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{selectedNode && selectedWorkflowNode ? (selectedWorkflowNode.label || selectedNode.id) : ''}"? This will also remove all connections to this node.
+              {edgeToDelete && (
+                <>Are you sure you want to delete the connection from "{edgeToDelete.source}" to "{edgeToDelete.target}"?</>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => {
-                // Mark that user wants to delete
-                shouldDeleteRef.current = true
+              onClick={(e) => {
+                e.preventDefault()
+                setShowDeleteEdgeConfirm(false)
+                // Execute delete after dialog closes
+                setTimeout(() => {
+                  confirmDeleteEdge()
+                  setEdgeToDelete(null)
+                }, 100)
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
@@ -1418,6 +2068,284 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Context Menu for Nodes */}
+      {contextMenuNode && contextMenuPosition && (
+        <div
+          style={{
+            position: 'fixed',
+            left: contextMenuPosition.x,
+            top: contextMenuPosition.y,
+            zIndex: 10000,
+            pointerEvents: 'auto'
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <ContextMenu>
+            <ContextMenuTrigger asChild>
+              <div style={{ position: 'absolute', width: 1, height: 1, left: 0, top: 0 }} />
+            </ContextMenuTrigger>
+            <ContextMenuContent
+              style={{
+                position: 'fixed',
+                left: contextMenuPosition.x,
+                top: contextMenuPosition.y
+              }}
+              onCloseAutoFocus={(e) => e.preventDefault()}
+            >
+              <ContextMenuItem
+                onClick={() => {
+                  if (contextMenuNode) {
+                    clipboardRef.current = { ...contextMenuNode }
+                    setContextMenuNode(null)
+                    setContextMenuPosition(null)
+                  }
+                }}
+              >
+                Copy
+                <ContextMenuShortcut>⌘C</ContextMenuShortcut>
+              </ContextMenuItem>
+              <ContextMenuItem
+                onClick={() => {
+                  if (contextMenuNode) {
+                    clipboardRef.current = { ...contextMenuNode }
+                    handleDeleteClick(contextMenuNode.id)
+                    setContextMenuNode(null)
+                    setContextMenuPosition(null)
+                  }
+                }}
+              >
+                Cut
+                <ContextMenuShortcut>⌘X</ContextMenuShortcut>
+              </ContextMenuItem>
+              {clipboardRef.current && (
+                <ContextMenuItem
+                  onClick={() => {
+                    if (clipboardRef.current) {
+                      const newNode = {
+                        ...clipboardRef.current,
+                        id: `node-${Date.now()}`,
+                        position: {
+                          x: contextMenuPosition.x - 200,
+                          y: contextMenuPosition.y - 100
+                        }
+                      }
+                      setNodes(nodes => [...nodes, newNode])
+                      setContextMenuNode(null)
+                      setContextMenuPosition(null)
+                      // Auto-save
+                      if (onSave) {
+                        setTimeout(() => {
+                          const workflowNodes = [...flowNodes, newNode].map(n => {
+                            let nodeType = 'action'
+                            if (n.type === 'start') nodeType = 'start'
+                            else if (n.type === 'end') nodeType = 'end'
+                            else if (n.type === 'conditional') nodeType = 'conditional'
+                            else if (n.data?.type) nodeType = n.data.type
+                            
+                            return {
+                              id: n.id,
+                              type: nodeType,
+                              label: n.data?.label || '',
+                              entryActions: n.data?.entryActions || [],
+                              exitActions: n.data?.exitActions || [],
+                              metadata: {
+                                ...(n.data?.metadata || {}),
+                                position: n.position
+                              }
+                            }
+                          })
+                          const workflowTransitions = flowEdges.map(e => ({
+                            id: e.id,
+                            source: e.source,
+                            target: e.target
+                          }))
+                          onSave(workflowNodes, workflowTransitions)
+                        }, 200)
+                      }
+                    }
+                  }}
+                >
+                  Paste
+                  <ContextMenuShortcut>⌘V</ContextMenuShortcut>
+                </ContextMenuItem>
+              )}
+              <ContextMenuItem
+                onClick={() => {
+                  if (contextMenuNode) {
+                    const newNode = {
+                      ...contextMenuNode,
+                      id: `node-${Date.now()}`,
+                      position: {
+                        x: contextMenuNode.position.x + 50,
+                        y: contextMenuNode.position.y + 50
+                      }
+                    }
+                    setNodes(nodes => [...nodes, newNode])
+                    setContextMenuNode(null)
+                    setContextMenuPosition(null)
+                    // Auto-save
+                    if (onSave) {
+                      setTimeout(() => {
+                        const workflowNodes = [...flowNodes, newNode].map(n => {
+                          let nodeType = 'action'
+                          if (n.type === 'start') nodeType = 'start'
+                          else if (n.type === 'end') nodeType = 'end'
+                          else if (n.type === 'conditional') nodeType = 'conditional'
+                          else if (n.data?.type) nodeType = n.data.type
+                          
+                          return {
+                            id: n.id,
+                            type: nodeType,
+                            label: n.data?.label || '',
+                            entryActions: n.data?.entryActions || [],
+                            exitActions: n.data?.exitActions || [],
+                            metadata: {
+                              ...(n.data?.metadata || {}),
+                              position: n.position
+                            }
+                          }
+                        })
+                        const workflowTransitions = flowEdges.map(e => ({
+                          id: e.id,
+                          source: e.source,
+                          target: e.target
+                        }))
+                        onSave(workflowNodes, workflowTransitions)
+                      }, 200)
+                    }
+                  }
+                }}
+              >
+                Duplicate
+                <ContextMenuShortcut>⌘D</ContextMenuShortcut>
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+              {selectedNodeIds.size > 1 && (
+                <>
+                  <ContextMenuItem
+                    onClick={() => {
+                      alignNodes('left')
+                      setContextMenuNode(null)
+                      setContextMenuPosition(null)
+                    }}
+                  >
+                    Align Left
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onClick={() => {
+                      alignNodes('center')
+                      setContextMenuNode(null)
+                      setContextMenuPosition(null)
+                    }}
+                  >
+                    Align Center
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onClick={() => {
+                      alignNodes('right')
+                      setContextMenuNode(null)
+                      setContextMenuPosition(null)
+                    }}
+                  >
+                    Align Right
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onClick={() => {
+                      alignNodes('top')
+                      setContextMenuNode(null)
+                      setContextMenuPosition(null)
+                    }}
+                  >
+                    Align Top
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onClick={() => {
+                      alignNodes('middle')
+                      setContextMenuNode(null)
+                      setContextMenuPosition(null)
+                    }}
+                  >
+                    Align Middle
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onClick={() => {
+                      alignNodes('bottom')
+                      setContextMenuNode(null)
+                      setContextMenuPosition(null)
+                    }}
+                  >
+                    Align Bottom
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+                </>
+              )}
+              <ContextMenuItem
+                onClick={() => {
+                  if (contextMenuNode) {
+                    handleDeleteClick(contextMenuNode.id)
+                    setContextMenuNode(null)
+                    setContextMenuPosition(null)
+                  }
+                }}
+                className="text-destructive focus:text-destructive"
+              >
+                Delete
+                <ContextMenuShortcut>Del</ContextMenuShortcut>
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
+        </div>
+      )}
+
+      {/* Context Menu for Edges */}
+      {contextMenuEdge && contextMenuPosition && (
+        <div
+          style={{
+            position: 'fixed',
+            left: contextMenuPosition.x,
+            top: contextMenuPosition.y,
+            zIndex: 10000,
+            pointerEvents: 'auto'
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <ContextMenu>
+            <ContextMenuTrigger asChild>
+              <div style={{ position: 'absolute', width: 1, height: 1, left: 0, top: 0 }} />
+            </ContextMenuTrigger>
+            <ContextMenuContent
+              style={{
+                position: 'fixed',
+                left: contextMenuPosition.x,
+                top: contextMenuPosition.y
+              }}
+              onCloseAutoFocus={(e) => e.preventDefault()}
+              onInteractOutside={() => {
+                setContextMenuEdge(null)
+                setContextMenuPosition(null)
+              }}
+            >
+              <ContextMenuItem
+                onClick={() => {
+                  if (contextMenuEdge) {
+                    setEdgeToDelete(contextMenuEdge)
+                    setShowDeleteEdgeConfirm(true)
+                    setContextMenuEdge(null)
+                    setContextMenuPosition(null)
+                  }
+                }}
+                className="text-destructive focus:text-destructive"
+              >
+                Delete
+                <ContextMenuShortcut>Del</ContextMenuShortcut>
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
+        </div>
+      )}
     </div>
   )
 }

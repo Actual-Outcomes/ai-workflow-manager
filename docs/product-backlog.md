@@ -4,6 +4,53 @@ This document tracks planned features and enhancements for future sprints.
 
 ---
 
+## ✅ Completed Features (Removed from Backlog)
+
+The following features have been implemented and are no longer in the backlog:
+
+### Workflow Authoring (Sprint 9)
+- ✅ Multi-selection (Ctrl/Cmd+Click, drag selection)
+- ✅ Alignment toolbar (6 operations: Left, Center, Right, Top, Middle, Bottom)
+- ✅ Right-click context menu (Copy, Cut, Paste, Duplicate, Delete, Align)
+- ✅ Node resizing with corner grabbers, size constraints, and aspect ratio
+- ✅ Resizable and pinnable properties panel
+- ✅ Node selection on drag
+- ✅ Auto-save for positions (500ms debounce) and configurations (immediate)
+- ✅ ShadCN UI components integrated (AlertDialog, ContextMenu, etc.)
+
+### Workflow Execution
+- ✅ WorkflowExecutionService with async execution
+- ✅ WorkflowExecutionView with real-time event updates
+- ✅ Pause/resume functionality
+- ✅ Run history and event logging
+
+### Connector & Credential Management
+- ✅ ConnectorRegistry with registration, removal, health checks
+- ✅ CredentialVault (OS keychain + JSON fallback)
+- ✅ CLI credential commands (add, list, remove)
+- ✅ Connector testing and status display
+
+### Document Management
+- ✅ DocumentService with export (DOCX, PDF, Markdown)
+- ✅ DocumentRegistry for tracking documents
+
+### Templates & Sharing
+- ✅ TemplateRegistry with permissions (ACL)
+- ✅ TemplateManifestService for export/import
+- ✅ TemplateDiffService for version comparison
+
+### Platform Operations
+- ✅ SchedulerService with cron support
+- ✅ LoggingService and TelemetryService
+- ✅ NotificationPreferenceService
+- ✅ BackupService and RetentionService
+- ✅ SecurityScanner
+
+### CLI Commands
+- ✅ 50+ CLI commands implemented (workflows, drafts, runs, connectors, credentials, documents, schedules, templates, ops, notifications, config, audit)
+
+---
+
 ## 🎯 Feature: UICard Step
 
 **Status**: Backlog  

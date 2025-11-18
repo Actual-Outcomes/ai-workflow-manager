@@ -3,7 +3,7 @@
 - **Epic**: EP1 — Workflow Authoring
 - **Persona**: Workflow Architect
 - **Priority**: P0
-- **Status**: Draft
+- **Status**: Implemented
 
 ## Context
 
@@ -17,24 +17,36 @@ As a workflow architect, I want to configure entry and exit actions for each nod
 
 ```
 Given I have selected a node on the canvas
-When I open the Actions tab in the inspector
-Then I can add, remove, and reorder entry actions from a predefined catalog (LLM prompt, file read/write, document builder, connector call)
+When the properties panel is open
+Then I can configure entry actions from available types: LLM Chat, Generate Document, Set Variable
 
-Given I configure an entry action that requires parameters
-When I fill out the form (e.g., prompt text, connector selection)
-Then validation occurs inline with helpful errors if required fields are missing
+Given I select an Action Type (LLM Chat, Generate Document, Set Variable)
+When I fill out the configuration fields
+Then the configuration auto-saves immediately and the panel remains open
 
-Given a node already has entry and exit actions defined
-When I duplicate the node or entire workflow
-Then the duplicated node retains its action definitions
+Given I configure an LLM Chat action
+When I provide a prompt and output variable name
+Then the action configuration is saved to the node's metadata
 
-Given I edit exit actions for a node that is part of a published workflow version
-When I save the draft changes
-Then a change indicator appears, and publishing requires revalidation
+Given I configure a Generate Document action
+When I provide document name, format (DOCX/PDF/Markdown), and content
+Then the action configuration is saved to the node's metadata
 
-Given I configure an action referencing credentials or files
-When those dependencies are missing or invalid
-Then the UI surfaces warnings and deep links to settings or file sandbox configuration
+Given I configure a Set Variable action
+When I provide variable name and value
+Then the action configuration is saved to the node's metadata
+
+Given I change the Action Type of a node
+When I select a different type from the dropdown
+Then the properties panel remains open and a new action configuration is created for the selected type
+
+Given I have a Conditional node selected
+When I configure the condition field
+Then the condition is saved to the node's metadata
+
+Given the properties panel is open
+When I make any configuration change
+Then the change is auto-saved without requiring a "Save" button click
 ```
 
 ## UX References

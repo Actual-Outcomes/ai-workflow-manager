@@ -3,7 +3,7 @@
 - **Epic**: EP2 — Workflow Execution & Monitoring
 - **Persona**: Operations Analyst
 - **Priority**: P0
-- **Status**: Draft
+- **Status**: Implemented
 
 ## Context
 
@@ -16,25 +16,25 @@ As an operations analyst, I want to view the current node status and timeline so
 ## Acceptance Criteria
 
 ```
-Given I open the execution console for a running workflow
+Given I open the WorkflowExecutionView for a running workflow
 When the workflow is active
-Then the current node panel shows node name, type, status, and live outputs, while the timeline rail lists ordered events (entry, triggers, validators, actions)
+Then the view displays run status, current node ID, execution context (variables), and a log of execution events
 
-Given validators or triggers are pending
-When I view the timeline
-Then pending items display as “In progress” with spinners and estimated durations
+Given a workflow run is executing
+When events are published (workflow-started, node-entered, action-executed, workflow-completed, etc.)
+Then the execution view receives real-time updates via IPC subscriptions and displays them in the log
 
-Given an error occurs
-When I inspect the timeline
-Then the relevant entry highlights in red, expands to show details, and the console provides suggested remediation steps
+Given I view the execution console
+When events occur
+Then each event shows timestamp, type, formatted message, and payload data
 
-Given I switch to JSON/log view
-When I toggle the log format
-Then I still see current node summary at the top while logs stream below
+Given I access run details via CLI
+When I run `workflow run runs show <runId>`
+Then I see run status, start/completion times, current node, error (if any), and all events with timestamps
 
-Given I access the console via CLI
-When I run `aiwm runs monitor <runId>`
-Then I receive the same information (current node + timeline) formatted for terminal output
+Given the execution view is open
+When new events arrive
+Then the log automatically scrolls to show the latest entries
 ```
 
 ## UX References

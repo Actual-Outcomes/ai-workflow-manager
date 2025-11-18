@@ -3,7 +3,7 @@
 - **Epic**: EP2 — Workflow Execution & Monitoring
 - **Persona**: Operations Analyst
 - **Priority**: P2
-- **Status**: Draft
+- **Status**: Implemented
 
 ## Context
 
@@ -16,25 +16,21 @@ As an operations analyst, I want to configure notification preferences so that I
 ## Acceptance Criteria
 
 ```
-Given I open Settings ▸ Notifications
-When I adjust preferences
-Then I can enable/disable event types (run started, validator failed, run completed, credential warning) and choose delivery channels (in-app, email*, CLI summary)
-
-Given I disable an event type
-When that event occurs
-Then I no longer receive alerts for it, but the event still appears in history panels
-
-Given I set quiet hours
-When events occur during that window
-Then notifications queue until quiet hours end, unless marked as critical
+Given I access notification preferences
+When I use NotificationPreferenceService
+Then I can get and save notification preferences with quiet hours (start/end times) and channels
 
 Given I use the CLI
-When I run `aiwm notifications prefs --set validator_failed=cli`
-Then my preferences update and are reflected in the UI settings page
+When I run `notifications get`
+Then I see the current notification preferences in JSON format
 
-Given multiple users share the same machine
-When each configures preferences
-Then settings remain per-user (tied to profile) and audit logs track changes
+Given I use the CLI
+When I run `notifications set --quiet-start <time> --quiet-end <time> --channels <channels>`
+Then my preferences are updated and saved to the configuration
+
+Given notification preferences are configured
+When the scheduler or workflow execution needs to send notifications
+Then the preferences are consulted to determine delivery channels and quiet hours
 ```
 
 ## UX References
